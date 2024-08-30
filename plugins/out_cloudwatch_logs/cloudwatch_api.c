@@ -195,12 +195,61 @@ static inline int try_to_write(char *buf, int *off, size_t left,
     return FLB_TRUE;
 }
 
+static int entity_add_key_attributes(struct flb_cloudwatch *ctx, struct cw_flush *buf, int *offset) {
+    if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
+                      "\"keyAttributes\":{\"Type\":\"Service\",\"Name\":\"compass-service\",\"Environment\":\"compass-environment\"},", 0)) {
+        goto error;
+    }
+    return 0;
+error:
+    return -1;
+}
+
+static int entity_add_attributes(struct flb_cloudwatch *ctx, struct cw_flush *buf, struct log_stream *stream,int *offset) {
+    char ts[256];
+    if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
+                      "\"attributes\":{",
+                      0)) {
+        goto error;
+    }
+    if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
+        "\"PlatformType\":\"AWS::EKS\""
+        ,0)) {
+        goto error;
+    }
+    if(stream->entity->attributes->namespace != NULL && strlen(stream->entity->attributes->namespace) != 0) {
+        if (!snprintf(ts,256, ",%s%s%s","\"K8s.Namespace\":\"",stream->entity->attributes->namespace,"\"")) {
+            goto error;
+        }
+        if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
+            goto error;
+        }
+    }
+    if(stream->entity->attributes->node != NULL && strlen(stream->entity->attributes->node) != 0) {
+        if (!snprintf(ts,256, ",%s%s%s","\"K8s.Node\":\"",buf->current_stream->entity->attributes->node,"\"")) {
+            goto error;
+        }
+        if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
+            goto error;
+        }
+    }
+
+    if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
+                  "}", 1)) {
+        goto error;
+    }
+    return 0;
+error:
+    return -1;
+}
+
 /*
  * Writes the "header" for a put log events payload
  */
 static int init_put_payload(struct flb_cloudwatch *ctx, struct cw_flush *buf,
                             struct log_stream *stream, int *offset)
 {
+    int ret;
     if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
                       "{\"logGroupName\":\"", 17)) {
         goto error;
@@ -224,6 +273,32 @@ static int init_put_payload(struct flb_cloudwatch *ctx, struct cw_flush *buf,
     if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
                       "\",", 2)) {
         goto error;
+    }
+    if(stream->entity != NULL) {
+        if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
+                      "\"entity\":{", 10)) {
+            goto error;
+        }
+
+        if(stream->entity->key_attributes != NULL) {
+            ret = entity_add_key_attributes(ctx,buf,offset);
+            if (ret < 0) {
+                flb_plg_error(ctx->ins, "Failed to initialize Entity KeyAttributes");
+                goto error;
+            }
+        }
+        if(stream->entity->attributes != NULL) {
+            ret = entity_add_attributes(ctx,buf,stream, offset);
+            if (ret < 0) {
+                flb_plg_error(ctx->ins, "Failed to initialize Entity Attributes");
+                goto error;
+            }
+        }
+        if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
+                      "},", 2)) {
+            goto error;
+        }
+
     }
 
     if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
@@ -782,6 +857,51 @@ int pack_emf_payload(struct flb_cloudwatch *ctx,
     return 0;
 }
 
+void parse_entity(struct flb_cloudwatch *ctx, entity *entity, msgpack_object map, int map_size) {
+    int i,j;
+    msgpack_object key, kube_key;
+    msgpack_object val, kube_val;
+
+    int val_map_size;
+    for(i=0; i < map_size; i++) {
+        key = map.via.map.ptr[i].key;
+        val = map.via.map.ptr[i].val;
+        if(strncmp(key.via.str.ptr, "kubernetes",10 ) == 0 ) {
+            if (val.type == MSGPACK_OBJECT_MAP) {
+                val_map_size = val.via.map.size;
+                for (j=0; j < val_map_size; j++) {
+                    kube_key = val.via.map.ptr[j].key;
+                    kube_val = val.via.map.ptr[j].val;
+                    if(strncmp(kube_key.via.str.ptr, "namespace_name", 14) == 0) {
+                        if(entity->attributes->namespace == NULL) {
+                            entity->attributes->namespace = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
+                        }
+                    } else if(strncmp(kube_key.via.str.ptr, "host", 4) == 0) {
+                        if(entity->attributes->node == NULL) {
+                            entity->attributes->node = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+void update_or_create_entity(struct flb_cloudwatch *ctx, struct log_stream *stream, const msgpack_object map) {
+    if(ctx->kubernete_metadata_enabled) {
+        if(stream->entity == NULL) {
+            stream->entity = flb_malloc(sizeof(entity));
+            stream->entity->key_attributes = flb_malloc(sizeof(entity_key_attributes));
+            stream->entity->attributes = flb_malloc(sizeof(entity_attributes));
+            stream->entity->attributes->namespace = NULL;
+            stream->entity->attributes->node = NULL;
+            parse_entity(ctx,stream->entity,map, map.via.map.size);
+        } else {
+            parse_entity(ctx,stream->entity,map, map.via.map.size);
+        }
+    }
+}
+
 /*
  * Main routine- processes msgpack and sends in batches which ignore the empty ones
  * return value is the number of events processed and send.
@@ -852,9 +972,13 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
         map_size = map.via.map.size;
 
         stream = get_log_stream(ctx, tag, map);
+        update_or_create_entity(ctx,stream,map);
         if (!stream) {
             flb_plg_debug(ctx->ins, "Couldn't determine log group & stream for record with tag %s", tag);
             goto error;
+        }
+        if (!stream->entity) {
+            flb_plg_warn(ctx->ins, "Failed to generate entity");
         }
 
         if (ctx->log_key) {
@@ -1420,6 +1544,8 @@ retry_request:
 
     if (c) {
         flb_plg_debug(ctx->ins, "PutLogEvents http status=%d", c->resp.status);
+        flb_plg_debug(ctx->ins, "PutLogEvents http data=%s", c->resp.data);
+        flb_plg_debug(ctx->ins, "PutLogEvents http payload=%s", c->resp.payload);
 
         if (c->resp.status == 200) {
             if (c->resp.data == NULL || c->resp.data_len == 0 || strstr(c->resp.data, AMZN_REQUEST_ID_HEADER) == NULL) {
