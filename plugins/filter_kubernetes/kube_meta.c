@@ -499,6 +499,23 @@ static int get_api_server_info(struct flb_kube *ctx,
     return 0;
 }
 
+/* Gather pods list information from Kubelet */
+static void get_cluster_from_environment(struct flb_kube *ctx,struct flb_kube_meta *meta)
+{
+    if(meta->cluster == NULL) {
+        char* cluster_name = getenv("CLUSTER_NAME");
+        int cluster_name_len = strlen(cluster_name);
+        if(cluster_name) {
+            meta->cluster = strdup(cluster_name);
+            meta->cluster_len = cluster_name_len;
+            meta->fields++;
+        } else {
+            free(cluster_name);
+        }
+        flb_plg_debug(ctx->ins, "Cluster name is %s.", meta->cluster);
+    }
+}
+
 static void cb_results(const char *name, const char *value,
                        size_t vlen, void *data)
 {
@@ -1059,6 +1076,12 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
 
     /* Append Regex fields */
     msgpack_pack_map(&mp_pck, map_size);
+    if (meta->cluster != NULL) {
+        msgpack_pack_str(&mp_pck, 7);
+        msgpack_pack_str_body(&mp_pck, "cluster", 7);
+        msgpack_pack_str(&mp_pck, meta->cluster_len);
+        msgpack_pack_str_body(&mp_pck, meta->cluster, meta->cluster_len);
+    }
     if (meta->podname != NULL) {
         msgpack_pack_str(&mp_pck, 8);
         msgpack_pack_str_body(&mp_pck, "pod_name", 8);
@@ -1334,7 +1357,7 @@ static int get_and_merge_meta(struct flb_kube *ctx, struct flb_kube_meta *meta,
     int ret;
     char *api_buf;
     size_t api_size;
-
+    get_cluster_from_environment(ctx, meta);
     if (ctx->use_tag_for_meta) {
         ret = merge_meta_from_tag(ctx, meta, out_buf, out_size);
         return ret;

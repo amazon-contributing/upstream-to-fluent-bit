@@ -217,6 +217,14 @@ static int entity_add_attributes(struct flb_cloudwatch *ctx, struct cw_flush *bu
         ,0)) {
         goto error;
     }
+    if(stream->entity->attributes->cluster_name != NULL && strlen(stream->entity->attributes->cluster_name) != 0) {
+        if (!snprintf(ts,256, ",%s%s%s","\"EKS.Cluster\":\"",stream->entity->attributes->cluster_name,"\"")) {
+            goto error;
+        }
+        if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
+            goto error;
+        }
+    }
     if(stream->entity->attributes->namespace != NULL && strlen(stream->entity->attributes->namespace) != 0) {
         if (!snprintf(ts,256, ",%s%s%s","\"K8s.Namespace\":\"",stream->entity->attributes->namespace,"\"")) {
             goto error;
@@ -227,6 +235,14 @@ static int entity_add_attributes(struct flb_cloudwatch *ctx, struct cw_flush *bu
     }
     if(stream->entity->attributes->node != NULL && strlen(stream->entity->attributes->node) != 0) {
         if (!snprintf(ts,256, ",%s%s%s","\"K8s.Node\":\"",buf->current_stream->entity->attributes->node,"\"")) {
+            goto error;
+        }
+        if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
+            goto error;
+        }
+    }
+    if(stream->entity->attributes->instance_id != NULL && strlen(stream->entity->attributes->instance_id) != 0) {
+        if (!snprintf(ts,256, ",%s%s%s","\"EC2.InstanceId\":\"",buf->current_stream->entity->attributes->instance_id,"\"")) {
             goto error;
         }
         if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
@@ -880,8 +896,17 @@ void parse_entity(struct flb_cloudwatch *ctx, entity *entity, msgpack_object map
                         if(entity->attributes->node == NULL) {
                             entity->attributes->node = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
                         }
+                    } else if(strncmp(kube_key.via.str.ptr, "cluster", 7) == 0) {
+                        if(entity->attributes->cluster_name == NULL) {
+                            entity->attributes->cluster_name = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
+                        }
                     }
                 }
+            }
+        }
+        if(strncmp(key.via.str.ptr, "ec2_instance_id",15 ) == 0 ) {
+            if(entity->attributes->instance_id == NULL) {
+                entity->attributes->instance_id = flb_strndup(val.via.str.ptr, val.via.str.size);
             }
         }
     }
@@ -895,6 +920,8 @@ void update_or_create_entity(struct flb_cloudwatch *ctx, struct log_stream *stre
             stream->entity->attributes = flb_malloc(sizeof(entity_attributes));
             stream->entity->attributes->namespace = NULL;
             stream->entity->attributes->node = NULL;
+            stream->entity->attributes->cluster_name = NULL;
+            stream->entity->attributes->instance_id = NULL;
             parse_entity(ctx,stream->entity,map, map.via.map.size);
         } else {
             parse_entity(ctx,stream->entity,map, map.via.map.size);

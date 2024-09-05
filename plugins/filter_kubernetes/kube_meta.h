@@ -27,6 +27,7 @@ struct flb_kube;
 struct flb_kube_meta {
     int fields;
 
+    int cluster_len;
     int namespace_len;
     int podname_len;
     int cache_key_len;
@@ -35,6 +36,7 @@ struct flb_kube_meta {
     int container_hash_len;
     int container_image_len;
 
+    char *cluster;
     char *namespace;
     char *podname;
     char *container_name;
