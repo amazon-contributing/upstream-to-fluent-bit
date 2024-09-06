@@ -46,6 +46,158 @@
     (sizeof(FLB_KUBE_META_INIT_CONTAINER_STATUSES_KEY) - 1)
 #define FLB_KUBE_TOKEN_BUF_SIZE 8192       /* 8KB */
 
+typedef struct pod_service_map{
+    char *pod_name;
+    char *service_name;
+    struct mk_list _head;
+} pod_service_map;
+
+struct mk_list pod_service_list;
+
+static void parse_pod_service_map(struct flb_kube *ctx, char *api_buf, size_t api_size)
+{
+    flb_plg_debug(ctx->ins, "started parsing pod to service map");
+
+    size_t off = 0;
+    int ret;
+    msgpack_unpacked api_result;
+    msgpack_object api_map;
+    msgpack_object k;
+    msgpack_object v;
+    char *buffer;
+    size_t size;
+    int root_type;
+    pod_service_map *entry;
+
+
+    /* Iterate API server msgpack and lookup specific fields */
+    if (api_buf != NULL) {
+        ret = flb_pack_json(api_buf, api_size,
+                        &buffer, &size, &root_type);
+
+        if (ret < 0) {
+            flb_plg_warn(ctx->ins, "Could not parse json response = %s",
+                     api_buf);
+            flb_free(buffer);
+            return;
+        }
+        msgpack_unpacked_init(&api_result);
+        ret = msgpack_unpack_next(&api_result, buffer, size, &off);
+        if (ret == MSGPACK_UNPACK_SUCCESS) {
+            api_map = api_result.data;
+            for (int i = 0; i < api_map.via.map.size; i++) {
+                k = api_map.via.map.ptr[i].key;
+                v = api_map.via.map.ptr[i].val;
+                if (k.type == MSGPACK_OBJECT_STR && v.type == MSGPACK_OBJECT_STR) {
+                    char *pod_name = flb_strndup(k.via.str.ptr, (size_t) k.via.str.size);
+                    char *service_name = flb_strndup(v.via.str.ptr, (size_t) v.via.str.size);
+                    entry = flb_malloc(sizeof( struct pod_service_map));
+                    if (!entry) {
+                        flb_error("Failed to allocate memory for pod_service_map");
+                        flb_free(pod_name);
+                        flb_free(service_name);
+                        return;
+                    }
+
+                    entry->pod_name = pod_name;
+                    entry->service_name = service_name;
+
+                    mk_list_init(&pod_service_list);
+
+                    mk_list_add(&entry->_head, &pod_service_list);
+
+                    flb_free(pod_name);
+                    flb_free(service_name);
+                }else {
+                    flb_plg_error(ctx->ins, "key and values are not strings");
+                }
+            }
+        }
+    }
+
+    flb_plg_debug(ctx->ins, "ended parsing pod to service map" );
+
+    msgpack_unpacked_destroy(&api_result);
+    flb_free(buffer);
+}
+
+static void log_pod_service_map(struct flb_filter_instance *ins)
+{
+    struct mk_list *tmp;
+    struct mk_list *head;
+    pod_service_map *entry;
+
+    flb_plg_debug(ins, "Pod to Service mapping:");
+
+    mk_list_foreach_safe(head, tmp, &pod_service_list) {
+        entry = mk_list_entry(head, pod_service_map, _head);
+        flb_plg_debug(ins, "Pod: %s, Service: %s", entry->pod_name, entry->service_name);
+    }
+}
+
+static int fetch_pod_service_map(struct flb_kube *ctx, struct flb_config *config, char *api_server_url)
+{
+    int ret;
+    struct flb_http_client *c;
+    size_t b_sent;
+    struct flb_upstream_conn *u_conn;
+    struct flb_upstream  *u;
+
+    flb_plg_debug(ctx->ins, "fetch pod to service map");
+
+    /* Get upstream context and connection */
+    u = flb_upstream_create(config,
+                            "cloudwatch-agent.amazon-cloudwatch",
+                            3333,
+                            FLB_IO_TCP, NULL);
+    u_conn = flb_upstream_conn_get(u);
+    if (!u_conn) {
+        flb_plg_error(ctx->ins, "no upstream connections available to %s:%i",
+                      u->tcp_host, u->tcp_port);
+        return FLB_RETRY;
+    }
+
+    /* Create HTTP client */
+    c = flb_http_client(u_conn, FLB_HTTP_GET,
+                        api_server_url,
+                        NULL, 0, "cloudwatch-agent.amazon-cloudwatch",
+                        3333, NULL, 0);
+
+    if (!c) {
+        flb_error("[kube_meta] could not create HTTP client");
+        return -1;
+    }
+
+    /* Perform HTTP request */
+    ret = flb_http_do(c, &b_sent);
+    flb_plg_debug(ctx->ins, "Request (uri = %s) http_do=%i, "
+                  "HTTP Status: %i",
+                  api_server_url, ret, c->resp.status);
+
+    if (ret != 0 || c->resp.status != 200) {
+        if (c->resp.payload_size > 0) {
+            flb_plg_debug(ctx->ins, "HTTP response : %s",
+                          c->resp.payload);
+        }
+        flb_http_client_destroy(c);
+        flb_upstream_conn_release(u_conn);
+        return -1;
+    }
+
+    /* Parse response data */
+    if (c->resp.payload != NULL) {
+        flb_plg_debug(ctx->ins, "HTTP response payload : %s",
+                              c->resp.payload);
+        parse_pod_service_map(ctx, c->resp.payload, c->resp.payload_size);
+        log_pod_service_map(ctx->ins);
+    }
+
+    /* Cleanup */
+    flb_http_client_destroy(c);
+    flb_upstream_conn_release(u_conn);
+    return 0;
+}
+
 static int file_to_buffer(const char *path,
                           char **out_buf, size_t *out_size)
 {
@@ -1482,6 +1634,8 @@ int flb_kube_meta_init(struct flb_kube *ctx, struct flb_config *config)
             flb_plg_warn(ctx->ins, "could not resolve %s", ctx->api_host);
             return -1;
         }
+
+        fetch_pod_service_map(ctx, config, "/fluent-bit");
 
         if (ctx->use_kubelet) {
             /* Gather info from Kubelet */
