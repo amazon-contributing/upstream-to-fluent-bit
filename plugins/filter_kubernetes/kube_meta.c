@@ -656,10 +656,9 @@ static void get_cluster_from_environment(struct flb_kube *ctx,struct flb_kube_me
 {
     if(meta->cluster == NULL) {
         char* cluster_name = getenv("CLUSTER_NAME");
-        int cluster_name_len = strlen(cluster_name);
         if(cluster_name) {
             meta->cluster = strdup(cluster_name);
-            meta->cluster_len = cluster_name_len;
+            meta->cluster_len = strlen(cluster_name);
             meta->fields++;
         } else {
             free(cluster_name);
