@@ -195,9 +195,34 @@ static inline int try_to_write(char *buf, int *off, size_t left,
     return FLB_TRUE;
 }
 
-static int entity_add_key_attributes(struct flb_cloudwatch *ctx, struct cw_flush *buf, int *offset) {
+static int entity_add_key_attributes(struct flb_cloudwatch *ctx, struct cw_flush *buf, struct log_stream *stream, int *offset) {
+    char ts[256];
     if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
-                      "\"keyAttributes\":{\"Type\":\"Service\",\"Name\":\"compass-service\",\"Environment\":\"compass-environment\"},", 0)) {
+                      "\"keyAttributes\":{",0)) {
+        goto error;
+    }
+    if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
+                        "\"Type\":\"Service\"",0)) {
+        goto error;
+    }
+    if(stream->entity->key_attributes->name != NULL && strlen(stream->entity->key_attributes->name) != 0) {
+        if (!snprintf(ts,256, ",%s%s%s","\"Name\":\"",stream->entity->key_attributes->name,"\"")) {
+            goto error;
+        }
+        if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
+            goto error;
+        }
+    }
+    if(stream->entity->key_attributes->environment != NULL && strlen(stream->entity->key_attributes->environment) != 0) {
+        if (!snprintf(ts,256, ",%s%s%s","\"Environment\":\"",stream->entity->key_attributes->environment,"\"")) {
+            goto error;
+        }
+        if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
+            goto error;
+        }
+    }
+    if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
+              "},", 2)) {
         goto error;
     }
     return 0;
@@ -290,21 +315,23 @@ static int init_put_payload(struct flb_cloudwatch *ctx, struct cw_flush *buf,
                       "\",", 2)) {
         goto error;
     }
-    if(stream->entity != NULL) {
+    // If we are missing the service name, the entity will get rejected by the frontend anyway
+    // so do not emit entity unless service name is filled
+    if(stream->entity != NULL && stream->entity->key_attributes->name != NULL) {
         if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
                       "\"entity\":{", 10)) {
             goto error;
         }
 
         if(stream->entity->key_attributes != NULL) {
-            ret = entity_add_key_attributes(ctx,buf,offset);
+            ret = entity_add_key_attributes(ctx,buf,stream,offset);
             if (ret < 0) {
                 flb_plg_error(ctx->ins, "Failed to initialize Entity KeyAttributes");
                 goto error;
             }
         }
         if(stream->entity->attributes != NULL) {
-            ret = entity_add_attributes(ctx,buf,stream, offset);
+            ret = entity_add_attributes(ctx,buf,stream,offset);
             if (ret < 0) {
                 flb_plg_error(ctx->ins, "Failed to initialize Entity Attributes");
                 goto error;
@@ -888,7 +915,15 @@ void parse_entity(struct flb_cloudwatch *ctx, entity *entity, msgpack_object map
                 for (j=0; j < val_map_size; j++) {
                     kube_key = val.via.map.ptr[j].key;
                     kube_val = val.via.map.ptr[j].val;
-                    if(strncmp(kube_key.via.str.ptr, "namespace_name", 14) == 0) {
+                    if(strncmp(kube_key.via.str.ptr, "service_name", 12) == 0) {
+                        if(entity->key_attributes->name == NULL) {
+                            entity->key_attributes->name = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
+                        }
+                    } else if(strncmp(kube_key.via.str.ptr, "environment", 11) == 0) {
+                        if(entity->key_attributes->environment == NULL) {
+                            entity->key_attributes->environment = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
+                        }
+                    } else if(strncmp(kube_key.via.str.ptr, "namespace_name", 14) == 0) {
                         if(entity->attributes->namespace == NULL) {
                             entity->attributes->namespace = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
                         }
@@ -916,12 +951,23 @@ void update_or_create_entity(struct flb_cloudwatch *ctx, struct log_stream *stre
     if(ctx->kubernete_metadata_enabled) {
         if(stream->entity == NULL) {
             stream->entity = flb_malloc(sizeof(entity));
+            if (stream->entity == NULL) {
+                return;
+            }
+            memset(stream->entity, 0, sizeof(entity));
+
             stream->entity->key_attributes = flb_malloc(sizeof(entity_key_attributes));
+            if (stream->entity->key_attributes == NULL) {
+                return;
+            }
+            memset(stream->entity->key_attributes, 0, sizeof(entity_key_attributes));
+
             stream->entity->attributes = flb_malloc(sizeof(entity_attributes));
-            stream->entity->attributes->namespace = NULL;
-            stream->entity->attributes->node = NULL;
-            stream->entity->attributes->cluster_name = NULL;
-            stream->entity->attributes->instance_id = NULL;
+            if (stream->entity->attributes == NULL) {
+                return;
+            }
+            memset(stream->entity->attributes, 0, sizeof(entity_attributes));
+
             parse_entity(ctx,stream->entity,map, map.via.map.size);
         } else {
             parse_entity(ctx,stream->entity,map, map.via.map.size);

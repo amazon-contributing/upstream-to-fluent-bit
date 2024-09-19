@@ -23,6 +23,7 @@ struct kube_test_result {
 /* Test target mode */
 #define KUBE_TAIL     0
 #define KUBE_SYSTEMD  1
+#define KUBE_POD_ASSOCIATION 2
 
 #ifdef FLB_HAVE_SYSTEMD
 int flb_test_systemd_send(void);
@@ -34,6 +35,48 @@ char kube_test_id[64];
 #define KUBE_PORT        "8002"
 #define KUBE_URL         "http://" KUBE_IP ":" KUBE_PORT
 #define DPATH            FLB_TESTS_DATA_PATH "/data/kubernetes"
+
+// Helper function to clear the file
+static void clear_file(const char *filename) {
+    FILE *file;
+
+    // Open the file in "w" mode to empty it
+    file = fopen(filename, "w");
+    if (file == NULL) {
+        perror("Error opening file to clear content");
+        return;
+    }
+
+    // Close the file to complete truncation
+    fclose(file);
+}
+
+// Helper function to write to the file with the specified content
+static void write_log_to_file(const char *filename) {
+    FILE *file;
+    time_t rawtime;
+    struct tm *timeinfo;
+    char time_str[100];
+    char log_entry[512];
+
+    // Log message to write
+    const char *log_template = "{\"log\":\"Fluent Bit is logging\\n\",\"stream\":\"stdout\",\"time\":\"2019-04-01T17:58:33.598656444Z\"}";
+
+    // Open the file for appending
+    file = fopen(filename, "a");
+    if (file == NULL) {
+        perror("Error opening file");
+        return;
+    }
+    // Format the final log entry with the current time
+    snprintf(log_entry, sizeof(log_entry), log_template);
+
+    // Write the log entry to the file
+    fprintf(file, "%s\n", log_entry);
+
+    // Close the file
+    fclose(file);
+}
 
 static int file_to_buf(const char *path, char **out_buf, size_t *out_size)
 {
@@ -210,12 +253,12 @@ static void kube_test(const char *target, int type, const char *suffix, int nExp
     ret = flb_service_set(ctx.flb,
                           "Flush", "1",
                           "Grace", "1",
-                          "Log_Level", "error",
+                          "Log_Level", "debug",
                           "Parsers_File", DPATH "/parsers.conf",
                           NULL);
     TEST_CHECK_(ret == 0, "setting service options");
 
-    if (type == KUBE_TAIL) {
+    if (type == KUBE_TAIL || type == KUBE_POD_ASSOCIATION) {
         /* Compose path based on target */
         snprintf(path, sizeof(path) - 1, DPATH "/log/%s.log", target);
         TEST_CHECK_(access(path, R_OK) == 0, "accessing log file: %s", path);
@@ -266,7 +309,7 @@ static void kube_test(const char *target, int type, const char *suffix, int nExp
     }
     va_end(va);
 
-    if (type == KUBE_TAIL) {
+    if (type == KUBE_TAIL || type == KUBE_POD_ASSOCIATION) {
         ret = flb_filter_set(ctx.flb, filter_ffd,
                              "Regex_Parser", "kubernetes-tag",
                              "Kube_Tag_Prefix", "kube.",
@@ -310,6 +353,10 @@ static void kube_test(const char *target, int type, const char *suffix, int nExp
     }
 #endif
 
+    if(type == KUBE_POD_ASSOCIATION) {
+        clear_file(path);
+    }
+
     /* Start the engine */
     ret = flb_start(ctx.flb);
     TEST_CHECK_(ret == 0, "starting engine");
@@ -323,9 +370,12 @@ static void kube_test(const char *target, int type, const char *suffix, int nExp
     }
 #endif
 
-    /* Poll for up to 2 seconds or until we got a match */
-    for (ret = 0; ret < 2000 && result.nMatched == 0; ret++) {
+    /* Poll for up to 3 seconds or until we got a match */
+    for (ret = 0; ret < 3000 && result.nMatched != nExpected; ret++) {
         usleep(1000);
+        if (ret == 2000 && type == KUBE_POD_ASSOCIATION) {
+            write_log_to_file(path);
+        }
     }
     TEST_CHECK(result.nMatched == nExpected);
     TEST_MSG("result.nMatched: %i\nnExpected: %i", result.nMatched, nExpected);
@@ -867,6 +917,19 @@ static void flb_test_annotations_exclude_multiple_4_container_4_stderr()
     flb_test_annotations_exclude("annotations-exclude_multiple-4_container-4", "stderr", 1);
 }
 
+#define flb_test_pod_to_service_map(target, suffix, nExpected) \
+        kube_test("options/" target, KUBE_POD_ASSOCIATION, suffix, nExpected, \
+        "use_pod_association", "true", \
+        "use_kubelet", "true", \
+        "kubelet_port", "8002", \
+        "Pod_Service_Preload_Cache_Dir", DPATH "/servicemap", \
+        NULL); \
+
+static void kube_options_use_pod_association_enabled()
+{
+    flb_test_pod_to_service_map("options_use-pod-association-enabled_fluent-bit", NULL, 1);
+}
+
 #ifdef FLB_HAVE_SYSTEMD
 #define CONTAINER_NAME "CONTAINER_NAME=k8s_kairosdb_kairosdb-914055854-b63vq_default_d6c53deb-05a4-11e8-a8c4-080027435fb7_23"
 #include <systemd/sd-journal.h>
@@ -957,6 +1020,7 @@ TEST_LIST = {
     {"kube_core_no_meta", flb_test_core_no_meta},
     {"kube_core_unescaping_text", flb_test_core_unescaping_text},
     {"kube_core_unescaping_json", flb_test_core_unescaping_json},
+    {"kube_options_use_pod_association_enabled", kube_options_use_pod_association_enabled},
     {"kube_options_use-kubelet_enabled_json", flb_test_options_use_kubelet_enabled_json},
     {"kube_options_use-kubelet_disabled_json", flb_test_options_use_kubelet_disabled_json},
     {"kube_options_merge_log_enabled_text", flb_test_options_merge_log_enabled_text},

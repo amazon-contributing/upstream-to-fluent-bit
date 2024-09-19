@@ -190,6 +190,12 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
         flb_plg_info(ctx->ins, "https=%i host=%s port=%i",
                      ctx->api_https, ctx->api_host, ctx->api_port);
     }
+
+
+    ctx->pod_hash_table = flb_hash_create_with_ttl(ctx->pod_service_map_ttl,
+                                       FLB_HASH_EVICT_OLDER,
+                                       FLB_HASH_TABLE_SIZE,
+                                       FLB_HASH_TABLE_SIZE);
     return ctx;
 }
 

@@ -64,7 +64,23 @@
 #define FLB_KUBE_TAG_PREFIX "kube.var.log.containers."
 #endif
 
+/*
+ * Maximum attribute length for Entity's KeyAttributes
+ * values
+ * https://docs.aws.amazon.com/applicationsignals/latest/APIReference/API_Service.html#:~:text=Maximum%20length%20of%201024.
+ */
+#define KEY_ATTRIBUTES_MAX_LEN 1024
+
 struct kube_meta;
+
+struct service_attributes {
+    char name[KEY_ATTRIBUTES_MAX_LEN];
+    int name_len;
+    char environment[KEY_ATTRIBUTES_MAX_LEN];
+    int environment_len;
+    int fields;
+
+};
 
 /* Filter context */
 struct flb_kube {
@@ -157,6 +173,21 @@ struct flb_kube {
     int kubelet_port;
 
     int kube_meta_cache_ttl;
+
+    /* Configuration used for enabling pod to service name mapping*/
+    char *use_pod_association;
+    char *pod_association_host;
+    char *pod_association_endpoint;
+    char *pod_association_port;
+
+    /*
+     * TTL is used to check how long should the mapped entry
+     * remain in the hash table
+     */
+    struct flb_hash *pod_hash_table;
+    int pod_service_map_ttl;
+    int pod_service_map_refresh_interval;
+    flb_sds_t pod_service_preload_cache_dir;
 
     struct flb_tls *tls;
 
