@@ -1717,5 +1717,9 @@ int flb_kube_meta_release(struct flb_kube_meta *meta)
         flb_free(meta->cache_key);
     }
 
+    if (meta->cluster) {
+        flb_free(meta->cluster);
+    }
+
     return r;
 }

@@ -178,7 +178,7 @@ struct flb_kube {
     char *use_pod_association;
     char *pod_association_host;
     char *pod_association_endpoint;
-    char *pod_association_port;
+    int pod_association_port;
 
     /*
      * TTL is used to check how long should the mapped entry

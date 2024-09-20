@@ -1,1 +1,6 @@
-{"use-pod-association-enabled":{"ServiceName":"test-service","Environment":"test-environment"}}
+{
+  "use-pod-association-enabled": {
+    "ServiceName": "test-service",
+    "Environment": "test-environment"
+  }
+}

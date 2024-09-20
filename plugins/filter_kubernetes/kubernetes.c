@@ -48,6 +48,7 @@ struct task_args {
 pthread_mutex_t metadata_mutex;
 pthread_t background_thread;
 struct task_args *task_args = {0};
+struct mk_event_loop *evl;
 
 /*
  * If a file exists called service.map, load it and use it.
@@ -132,7 +133,7 @@ static void parse_pod_service_map(struct flb_kube *ctx, char *api_buf, size_t ap
                 v = api_map.via.map.ptr[i].val;
                 if (k.type == MSGPACK_OBJECT_STR && v.type == MSGPACK_OBJECT_MAP) {
                     char *pod_name = flb_strndup(k.via.str.ptr, k.via.str.size);
-                    struct service_attributes *service_attributes = malloc(sizeof(struct service_attributes));
+                    struct service_attributes *service_attributes = flb_malloc(sizeof(struct service_attributes));
                     for (int j = 0; j < v.via.map.size; j++) {
                         attributeKey = v.via.map.ptr[j].key;
                         attributeValue = v.via.map.ptr[j].val;
@@ -157,7 +158,7 @@ static void parse_pod_service_map(struct flb_kube *ctx, char *api_buf, size_t ap
                         pthread_mutex_lock(&metadata_mutex);
                         flb_hash_add(ctx->pod_hash_table,
                                 pod_name,k.via.str.size,
-                                service_attributes, sizeof(struct service_attributes));
+                                service_attributes, 0);
                         pthread_mutex_unlock(&metadata_mutex);
                     } else {
                         flb_free(service_attributes);
@@ -192,6 +193,7 @@ static int fetch_pod_service_map(struct flb_kube *ctx, char *api_server_url) {
     ret = get_pod_service_file_info(ctx, "use_pod_association_enabled", &buffer);
     if (ret > 0 && buffer != NULL) {
         parse_pod_service_map(ctx, buffer, ret);
+        flb_free(buffer);
     }
     else {
         /* Get upstream context and connection */
@@ -250,7 +252,7 @@ static int fetch_pod_service_map(struct flb_kube *ctx, char *api_server_url) {
 void *update_pod_service_map(void *arg) {
     while (1) {
         flb_engine_evl_init();
-        struct mk_event_loop *evl = mk_event_loop_create(256);
+        evl = mk_event_loop_create(256);
         flb_engine_evl_set(evl);
         fetch_pod_service_map(task_args->ctx,task_args->api_server_url);
         flb_plg_debug(task_args->ctx->ins, "Updating pod to service map after %d seconds", task_args->ctx->pod_service_map_refresh_interval);
@@ -863,7 +865,9 @@ static int cb_kube_exit(void *data, struct flb_config *config)
     pthread_mutex_destroy(&metadata_mutex);
 
     flb_free(task_args);
-
+    if (evl) {
+        mk_event_loop_destroy(evl);
+    }
     return 0;
 }
 

@@ -192,7 +192,7 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
     }
 
 
-    ctx->pod_hash_table = flb_hash_create_with_ttl(ctx->pod_service_map_ttl,
+    ctx->pod_hash_table = flb_hash_create_with_ttl_force_destroy(ctx->pod_service_map_ttl,
                                        FLB_HASH_EVICT_OLDER,
                                        FLB_HASH_TABLE_SIZE,
                                        FLB_HASH_TABLE_SIZE);
@@ -207,6 +207,10 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
 
     if (ctx->hash_table) {
         flb_hash_destroy(ctx->hash_table);
+    }
+
+    if (ctx->pod_hash_table) {
+        flb_hash_destroy(ctx->pod_hash_table);
     }
 
     if (ctx->merge_log == FLB_TRUE) {

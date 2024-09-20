@@ -54,9 +54,6 @@ static void clear_file(const char *filename) {
 // Helper function to write to the file with the specified content
 static void write_log_to_file(const char *filename) {
     FILE *file;
-    time_t rawtime;
-    struct tm *timeinfo;
-    char time_str[100];
     char log_entry[512];
 
     // Log message to write
