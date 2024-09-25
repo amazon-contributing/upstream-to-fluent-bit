@@ -151,6 +151,12 @@ static void parse_pod_service_map(struct flb_kube *ctx, char *api_buf, size_t ap
                                 service_attributes->environment_len = attributeValue.via.str.size;
                                 service_attributes->fields++;
                             }
+                            if(strcmp(attributeKeyString, "ServiceNameSource") == 0 && attributeValue.via.str.size < SERVICE_NAME_SOURCE_MAX_LEN) {
+                                strncpy(service_attributes->name_source, attributeValue.via.str.ptr,attributeValue.via.str.size);
+                                service_attributes->name_source[attributeValue.via.str.size] = '\0';
+                                service_attributes->name_source_len = attributeValue.via.str.size;
+                                service_attributes->fields++;
+                            }
                             flb_free(attributeKeyString);
                         }
                     }

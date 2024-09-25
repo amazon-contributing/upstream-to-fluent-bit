@@ -508,6 +508,7 @@ void entity_destroy(entity *entity) {
         flb_free(entity->attributes->node);
         flb_free(entity->attributes->platform_type);
         flb_free(entity->attributes->workload);
+        flb_free(entity->attributes->name_source);
         flb_free(entity->attributes);
     }
     if(entity->key_attributes) {

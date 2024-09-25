@@ -70,6 +70,7 @@
  * https://docs.aws.amazon.com/applicationsignals/latest/APIReference/API_Service.html#:~:text=Maximum%20length%20of%201024.
  */
 #define KEY_ATTRIBUTES_MAX_LEN 1024
+#define SERVICE_NAME_SOURCE_MAX_LEN 64
 
 struct kube_meta;
 
@@ -78,6 +79,8 @@ struct service_attributes {
     int name_len;
     char environment[KEY_ATTRIBUTES_MAX_LEN];
     int environment_len;
+    char name_source[SERVICE_NAME_SOURCE_MAX_LEN];
+    int name_source_len;
     int fields;
 
 };

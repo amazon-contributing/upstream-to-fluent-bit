@@ -196,7 +196,7 @@ static inline int try_to_write(char *buf, int *off, size_t left,
 }
 
 static int entity_add_key_attributes(struct flb_cloudwatch *ctx, struct cw_flush *buf, struct log_stream *stream, int *offset) {
-    char ts[256];
+    char ts[KEY_ATTRIBUTES_MAX_LEN];
     if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
                       "\"keyAttributes\":{",0)) {
         goto error;
@@ -206,7 +206,7 @@ static int entity_add_key_attributes(struct flb_cloudwatch *ctx, struct cw_flush
         goto error;
     }
     if(stream->entity->key_attributes->name != NULL && strlen(stream->entity->key_attributes->name) != 0) {
-        if (!snprintf(ts,256, ",%s%s%s","\"Name\":\"",stream->entity->key_attributes->name,"\"")) {
+        if (!snprintf(ts,KEY_ATTRIBUTES_MAX_LEN, ",%s%s%s","\"Name\":\"",stream->entity->key_attributes->name,"\"")) {
             goto error;
         }
         if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
@@ -214,7 +214,7 @@ static int entity_add_key_attributes(struct flb_cloudwatch *ctx, struct cw_flush
         }
     }
     if(stream->entity->key_attributes->environment != NULL && strlen(stream->entity->key_attributes->environment) != 0) {
-        if (!snprintf(ts,256, ",%s%s%s","\"Environment\":\"",stream->entity->key_attributes->environment,"\"")) {
+        if (!snprintf(ts,KEY_ATTRIBUTES_MAX_LEN, ",%s%s%s","\"Environment\":\"",stream->entity->key_attributes->environment,"\"")) {
             goto error;
         }
         if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
@@ -231,7 +231,7 @@ error:
 }
 
 static int entity_add_attributes(struct flb_cloudwatch *ctx, struct cw_flush *buf, struct log_stream *stream,int *offset) {
-    char ts[256];
+    char ts[ATTRIBUTES_MAX_LEN];
     if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
                       "\"attributes\":{",
                       0)) {
@@ -243,7 +243,7 @@ static int entity_add_attributes(struct flb_cloudwatch *ctx, struct cw_flush *bu
         goto error;
     }
     if(stream->entity->attributes->cluster_name != NULL && strlen(stream->entity->attributes->cluster_name) != 0) {
-        if (!snprintf(ts,256, ",%s%s%s","\"EKS.Cluster\":\"",stream->entity->attributes->cluster_name,"\"")) {
+        if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s","\"EKS.Cluster\":\"",stream->entity->attributes->cluster_name,"\"")) {
             goto error;
         }
         if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
@@ -251,7 +251,7 @@ static int entity_add_attributes(struct flb_cloudwatch *ctx, struct cw_flush *bu
         }
     }
     if(stream->entity->attributes->namespace != NULL && strlen(stream->entity->attributes->namespace) != 0) {
-        if (!snprintf(ts,256, ",%s%s%s","\"K8s.Namespace\":\"",stream->entity->attributes->namespace,"\"")) {
+        if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s","\"K8s.Namespace\":\"",stream->entity->attributes->namespace,"\"")) {
             goto error;
         }
         if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
@@ -259,7 +259,7 @@ static int entity_add_attributes(struct flb_cloudwatch *ctx, struct cw_flush *bu
         }
     }
     if(stream->entity->attributes->node != NULL && strlen(stream->entity->attributes->node) != 0) {
-        if (!snprintf(ts,256, ",%s%s%s","\"K8s.Node\":\"",buf->current_stream->entity->attributes->node,"\"")) {
+        if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s","\"K8s.Node\":\"",buf->current_stream->entity->attributes->node,"\"")) {
             goto error;
         }
         if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
@@ -267,7 +267,15 @@ static int entity_add_attributes(struct flb_cloudwatch *ctx, struct cw_flush *bu
         }
     }
     if(stream->entity->attributes->instance_id != NULL && strlen(stream->entity->attributes->instance_id) != 0) {
-        if (!snprintf(ts,256, ",%s%s%s","\"EC2.InstanceId\":\"",buf->current_stream->entity->attributes->instance_id,"\"")) {
+        if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s","\"EC2.InstanceId\":\"",buf->current_stream->entity->attributes->instance_id,"\"")) {
+            goto error;
+        }
+        if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
+            goto error;
+        }
+    }
+    if(stream->entity->attributes->name_source != NULL && strlen(stream->entity->attributes->name_source) != 0) {
+        if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s","\"AWS.ServiceNameSource\":\"",buf->current_stream->entity->attributes->name_source,"\"")) {
             goto error;
         }
         if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
@@ -915,31 +923,35 @@ void parse_entity(struct flb_cloudwatch *ctx, entity *entity, msgpack_object map
                 for (j=0; j < val_map_size; j++) {
                     kube_key = val.via.map.ptr[j].key;
                     kube_val = val.via.map.ptr[j].val;
-                    if(strncmp(kube_key.via.str.ptr, "service_name", 12) == 0) {
+                    if(strncmp(kube_key.via.str.ptr, "service_name", kube_key.via.str.size) == 0) {
                         if(entity->key_attributes->name == NULL) {
                             entity->key_attributes->name = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
                         }
-                    } else if(strncmp(kube_key.via.str.ptr, "environment", 11) == 0) {
+                    } else if(strncmp(kube_key.via.str.ptr, "environment", kube_key.via.str.size) == 0) {
                         if(entity->key_attributes->environment == NULL) {
                             entity->key_attributes->environment = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
                         }
-                    } else if(strncmp(kube_key.via.str.ptr, "namespace_name", 14) == 0) {
+                    } else if(strncmp(kube_key.via.str.ptr, "namespace_name", kube_key.via.str.size) == 0) {
                         if(entity->attributes->namespace == NULL) {
                             entity->attributes->namespace = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
                         }
-                    } else if(strncmp(kube_key.via.str.ptr, "host", 4) == 0) {
+                    } else if(strncmp(kube_key.via.str.ptr, "host", kube_key.via.str.size) == 0) {
                         if(entity->attributes->node == NULL) {
                             entity->attributes->node = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
                         }
-                    } else if(strncmp(kube_key.via.str.ptr, "cluster", 7) == 0) {
+                    } else if(strncmp(kube_key.via.str.ptr, "cluster", kube_key.via.str.size) == 0) {
                         if(entity->attributes->cluster_name == NULL) {
                             entity->attributes->cluster_name = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
+                        }
+                    } else if(strncmp(kube_key.via.str.ptr, "name_source", kube_key.via.str.size) == 0) {
+                        if(entity->attributes->name_source == NULL) {
+                            entity->attributes->name_source = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
                         }
                     }
                 }
             }
         }
-        if(strncmp(key.via.str.ptr, "ec2_instance_id",15 ) == 0 ) {
+        if(strncmp(key.via.str.ptr, "ec2_instance_id",key.via.str.size ) == 0 ) {
             if(entity->attributes->instance_id == NULL) {
                 entity->attributes->instance_id = flb_strndup(val.via.str.ptr, val.via.str.size);
             }

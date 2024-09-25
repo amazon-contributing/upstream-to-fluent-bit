@@ -54,6 +54,7 @@ typedef struct entity_attributes {
     char *workload;
     char *node;
     char *instance_id;
+    char *name_source;
 }entity_attributes;
 
 /* buffers used for each flush */

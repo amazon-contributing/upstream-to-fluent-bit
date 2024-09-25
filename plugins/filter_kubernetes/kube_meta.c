@@ -1115,6 +1115,12 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
             msgpack_pack_str(&mp_pck, tmp_service_attributes->environment_len);
             msgpack_pack_str_body(&mp_pck, tmp_service_attributes->environment, tmp_service_attributes->environment_len);
         }
+        if (tmp_service_attributes->name_source[0] != '\0') {
+            msgpack_pack_str(&mp_pck, 11);
+            msgpack_pack_str_body(&mp_pck, "name_source", 11);
+            msgpack_pack_str(&mp_pck, tmp_service_attributes->name_source_len);
+            msgpack_pack_str_body(&mp_pck, tmp_service_attributes->name_source, tmp_service_attributes->name_source_len);
+        }
     }
 
     /* Append API Server content */
@@ -1341,6 +1347,9 @@ static inline int extract_meta(struct flb_kube *ctx,
             if (tmp_service_attributes->environment[0] != '\0') {
                 n += tmp_service_attributes->environment_len + 1;
             }
+            if (tmp_service_attributes->name_source[0] != '\0') {
+                n += tmp_service_attributes->name_source_len + 1;
+            }
         }
 
         meta->cache_key = flb_malloc(n);
@@ -1384,6 +1393,11 @@ static inline int extract_meta(struct flb_kube *ctx,
                 meta->cache_key[off++] = ':';
                 memcpy(meta->cache_key + off, tmp_service_attributes->environment, tmp_service_attributes->environment_len);
                 off += tmp_service_attributes->environment_len;
+            }
+            if (tmp_service_attributes->name_source[0] != '\0') {
+                meta->cache_key[off++] = ':';
+                memcpy(meta->cache_key + off, tmp_service_attributes->name_source, tmp_service_attributes->name_source_len);
+                off += tmp_service_attributes->name_source_len;
             }
         }
 
