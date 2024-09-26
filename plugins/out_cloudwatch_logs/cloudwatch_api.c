@@ -266,6 +266,14 @@ static int entity_add_attributes(struct flb_cloudwatch *ctx, struct cw_flush *bu
             goto error;
         }
     }
+    if(stream->entity->attributes->workload != NULL && strlen(stream->entity->attributes->workload) != 0) {
+        if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s","\"K8s.Workload\":\"",buf->current_stream->entity->attributes->workload,"\"")) {
+            goto error;
+        }
+        if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
+            goto error;
+        }
+    }
     if(stream->entity->attributes->instance_id != NULL && strlen(stream->entity->attributes->instance_id) != 0) {
         if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s","\"EC2.InstanceId\":\"",buf->current_stream->entity->attributes->instance_id,"\"")) {
             goto error;
@@ -942,6 +950,10 @@ void parse_entity(struct flb_cloudwatch *ctx, entity *entity, msgpack_object map
                     } else if(strncmp(kube_key.via.str.ptr, "cluster", kube_key.via.str.size) == 0) {
                         if(entity->attributes->cluster_name == NULL) {
                             entity->attributes->cluster_name = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
+                        }
+                    } else if(strncmp(kube_key.via.str.ptr, "workload", kube_key.via.str.size) == 0) {
+                        if(entity->attributes->workload == NULL) {
+                            entity->attributes->workload = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
                         }
                     } else if(strncmp(kube_key.via.str.ptr, "name_source", kube_key.via.str.size) == 0) {
                         if(entity->attributes->name_source == NULL) {

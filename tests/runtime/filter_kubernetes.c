@@ -429,10 +429,41 @@ static void flb_test_options_use_kubelet_enabled_json()
     flb_test_options_use_kubelet_enabled("options_use-kubelet-enabled_fluent-bit", NULL, 1);
 }
 
+static void flb_test_options_use_kubelet_enabled_replicaset_json()
+{
+    flb_test_options_use_kubelet_enabled("options_use-kubelet-enabled-replicaset_fluent-bit", NULL, 1);
+}
+
+static void flb_test_options_use_kubelet_enabled_deployment_json()
+{
+    flb_test_options_use_kubelet_enabled("options_use-kubelet-enabled-deployment_fluent-bit", NULL, 1);
+}
+
+static void flb_test_options_use_kubelet_enabled_daemonset_json()
+{
+    flb_test_options_use_kubelet_enabled("options_use-kubelet-enabled-daemonset_fluent-bit", NULL, 1);
+}
+
 static void flb_test_options_use_kubelet_disabled_json()
 {
     flb_test_options_use_kubelet_disabled("options_use-kubelet-disabled_fluent-bit", NULL, 1);
 }
+
+static void flb_test_options_use_kubelet_disabled_replicaset_json()
+{
+    flb_test_options_use_kubelet_disabled("options_use-kubelet-disabled-replicaset_fluent-bit", NULL, 1);
+}
+
+static void flb_test_options_use_kubelet_disabled_deployment_json()
+{
+    flb_test_options_use_kubelet_disabled("options_use-kubelet-disabled-deployment_fluent-bit", NULL, 1);
+}
+
+static void flb_test_options_use_kubelet_disabled_daemonset_json()
+{
+    flb_test_options_use_kubelet_disabled("options_use-kubelet-disabled-daemonset_fluent-bit", NULL, 1);
+}
+
 
 #define flb_test_options_merge_log_enabled(target, suffix, nExpected) \
     kube_test("options/" target, KUBE_TAIL, suffix, nExpected, \
@@ -1019,7 +1050,13 @@ TEST_LIST = {
     {"kube_core_unescaping_json", flb_test_core_unescaping_json},
     {"kube_options_use_pod_association_enabled", kube_options_use_pod_association_enabled},
     {"kube_options_use-kubelet_enabled_json", flb_test_options_use_kubelet_enabled_json},
+    {"kube_options_use-kubelet_enabled_replicateset_json", flb_test_options_use_kubelet_enabled_replicaset_json},
+    {"kube_options_use-kubelet_enabled_deployment_json", flb_test_options_use_kubelet_enabled_deployment_json},
+    {"kube_options_use-kubelet_enabled_daemonset_json", flb_test_options_use_kubelet_enabled_daemonset_json},
     {"kube_options_use-kubelet_disabled_json", flb_test_options_use_kubelet_disabled_json},
+    {"kube_options_use-kubelet_disabled_replicaset_json", flb_test_options_use_kubelet_disabled_replicaset_json},
+    {"kube_options_use-kubelet_disabled_deployment_json", flb_test_options_use_kubelet_disabled_deployment_json},
+    {"kube_options_use-kubelet_disabled_daemonset_json", flb_test_options_use_kubelet_disabled_daemonset_json},
     {"kube_options_merge_log_enabled_text", flb_test_options_merge_log_enabled_text},
     {"kube_options_merge_log_enabled_json", flb_test_options_merge_log_enabled_json},
     {"kube_options_merge_log_enabled_invalid_json", flb_test_options_merge_log_enabled_invalid_json},

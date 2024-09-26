@@ -138,6 +138,7 @@ struct flb_kube {
 
     /* Regex context to parse records */
     struct flb_regex *regex;
+    struct flb_regex *deploymentRegex;
     struct flb_parser *parser;
 
     /* TLS CA certificate file */

@@ -221,6 +221,9 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
     if (ctx->parser == NULL && ctx->regex) {
         flb_regex_destroy(ctx->regex);
     }
+    if (ctx->deploymentRegex) {
+        flb_regex_destroy(ctx->deploymentRegex);
+    }
 
     flb_free(ctx->api_host);
     flb_free(ctx->token);

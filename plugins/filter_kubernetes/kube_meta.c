@@ -721,6 +721,102 @@ static void extract_container_hash(struct flb_kube_meta *meta,
     }
 }
 
+static void cb_results_workload(const char *name, const char *value,
+                       size_t vlen, void *data)
+{
+    if (name == NULL || value == NULL ||  vlen == 0 || data == NULL) {
+        return;
+    }
+
+    struct flb_kube_meta *meta = data;
+
+    if (meta->workload == NULL && strcmp(name, "deployment") == 0) {
+        meta->workload = flb_strndup(value, vlen);
+        meta->workload_len = vlen;
+        meta->fields++;
+    }
+}
+
+static void search_workload(struct flb_kube_meta *meta,struct flb_kube *ctx,msgpack_object map)
+{
+    int i,j,ownerIndex;
+    int regex_found;
+    int replicaset_match;
+    int podname_match = FLB_FALSE;
+    msgpack_object k, v;
+    msgpack_object_map ownerMap;
+    struct flb_regex_search result;
+    /* Temporary variable to store the workload value */
+    msgpack_object workload_val;
+
+    for (i = 0; i < map.via.map.size; i++) {
+
+        k = map.via.map.ptr[i].key;
+        v = map.via.map.ptr[i].val;
+        if (strncmp(k.via.str.ptr, "name", k.via.str.size) == 0) {
+
+            if (!strncmp(v.via.str.ptr, meta->podname, v.via.str.size)) {
+                podname_match = FLB_TRUE;
+            }
+
+        }
+        /* Example JSON for the below parsing:
+         *    "ownerReferences": [
+              {
+                "apiVersion": "apps/v1",
+                "kind": "ReplicaSet",
+                "name": "my-replicaset",
+                "uid": "abcd1234-5678-efgh-ijkl-9876mnopqrst",
+                "controller": true,
+                "blockOwnerDeletion": true
+              }
+        ]*/
+        if (podname_match && strncmp(k.via.str.ptr, "ownerReferences", k.via.str.size) == 0 && v.type == MSGPACK_OBJECT_ARRAY) {
+            for (j = 0; j < v.via.array.size; j++) {
+                if (v.via.array.ptr[j].type == MSGPACK_OBJECT_MAP) {
+                    ownerMap = v.via.array.ptr[j].via.map;
+                    for (ownerIndex = 0; ownerIndex < ownerMap.size; ownerIndex++) {
+                        msgpack_object key = ownerMap.ptr[ownerIndex].key;
+                        msgpack_object val = ownerMap.ptr[ownerIndex].val;
+
+                        /* Ensure both key and value are strings */
+                        if (key.type == MSGPACK_OBJECT_STR && val.type == MSGPACK_OBJECT_STR) {
+                            if (strncmp(key.via.str.ptr, "kind", key.via.str.size) == 0 && strncmp(val.via.str.ptr, "ReplicaSet", val.via.str.size) == 0) {
+                                replicaset_match = FLB_TRUE;
+                            }
+
+                            if (strncmp(key.via.str.ptr, "name", key.via.str.size) == 0) {
+                                /* Store the value of 'name' in workload_val so it can be reused by set_workload */
+                                workload_val = val;
+                                if (replicaset_match) {
+                                    regex_found = flb_regex_do(ctx->deploymentRegex, val.via.str.ptr, val.via.str.size, &result);
+                                    if (regex_found > 0) {
+                                        /* Parse regex results */
+                                        flb_regex_parse(ctx->deploymentRegex, &result, cb_results_workload, meta);
+                                    } else {
+                                        /* Set workload if regex does not match */
+                                        goto set_workload;
+                                    }
+                                } else {
+                                    /* Set workload if not a replicaset match */
+                                    goto set_workload;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+return;
+
+set_workload:
+    meta->workload = flb_strndup(workload_val.via.str.ptr, workload_val.via.str.size);
+    meta->workload_len = workload_val.via.str.size;
+    meta->fields++;
+}
+
 static int search_podname_and_namespace(struct flb_kube_meta *meta,
                                         struct flb_kube *ctx,
                                         msgpack_object map)
@@ -1006,6 +1102,7 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
                 k = api_map.via.map.ptr[i].key;
                 if (k.via.str.size == 8 && !strncmp(k.via.str.ptr, "metadata", 8)) {
                     meta_val = api_map.via.map.ptr[i].val;
+                    search_workload(meta,ctx,meta_val);
                     if (meta_val.type == MSGPACK_OBJECT_MAP) {
                         meta_found = FLB_TRUE;
                     }
@@ -1121,6 +1218,13 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
             msgpack_pack_str(&mp_pck, tmp_service_attributes->name_source_len);
             msgpack_pack_str_body(&mp_pck, tmp_service_attributes->name_source, tmp_service_attributes->name_source_len);
         }
+    }
+
+    if (meta->workload != NULL) {
+        msgpack_pack_str(&mp_pck, 8);
+        msgpack_pack_str_body(&mp_pck, "workload", 8);
+        msgpack_pack_str(&mp_pck, meta->workload_len);
+        msgpack_pack_str_body(&mp_pck, meta->workload, meta->workload_len);
     }
 
     /* Append API Server content */
@@ -1693,8 +1797,7 @@ int flb_kube_meta_get(struct flb_kube *ctx,
     return 0;
 }
 
-int flb_kube_meta_release(struct flb_kube_meta *meta)
-{
+int flb_kube_meta_release(struct flb_kube_meta *meta) {
     int r = 0;
 
     if (meta->namespace) {
@@ -1729,6 +1832,10 @@ int flb_kube_meta_release(struct flb_kube_meta *meta)
 
     if (meta->cache_key) {
         flb_free(meta->cache_key);
+    }
+
+    if (meta->workload) {
+        flb_free(meta->workload);
     }
 
     if (meta->cluster) {
