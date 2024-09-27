@@ -192,6 +192,15 @@ struct flb_kube {
     int pod_service_map_ttl;
     int pod_service_map_refresh_interval;
     flb_sds_t pod_service_preload_cache_dir;
+    struct flb_upstream *pod_association_upstream;
+
+    //Agent TLS certs
+    struct flb_tls *pod_association_tls;
+    char *pod_association_host_server_ca_file;
+    char *pod_association_host_client_cert_file;
+    char *pod_association_host_client_key_file;
+    int pod_association_host_tls_debug;
+    int pod_association_host_tls_verify;
 
     struct flb_tls *tls;
 

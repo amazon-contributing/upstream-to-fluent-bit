@@ -191,7 +191,6 @@ static int fetch_pod_service_map(struct flb_kube *ctx, char *api_server_url) {
     struct flb_http_client *c;
     size_t b_sent;
     struct flb_upstream_conn *u_conn;
-    struct flb_upstream  *u;
     char *buffer = {0};
 
     flb_plg_debug(ctx->ins, "fetch pod to service map");
@@ -203,15 +202,25 @@ static int fetch_pod_service_map(struct flb_kube *ctx, char *api_server_url) {
     }
     else {
         /* Get upstream context and connection */
-        u = flb_upstream_create(ctx->config,
-                                ctx->pod_association_host,
-                                ctx->pod_association_port,
-                                FLB_IO_TCP, NULL);
-        u_conn = flb_upstream_conn_get(u);
+        /* if block handles the TLS certificates update, as the Fluent-bit connection gets net timeout error, it destroys the upstream
+         * On the next call to fetch_pod_service_map, it creates a new pod association upstream with latest TLS certs */
+        if (!ctx->pod_association_upstream) {
+            flb_plg_debug(ctx->ins, "[kubernetes] upstream object for pod association is NULL. Making a new one now");
+            ret = flb_kube_pod_association_init(ctx,ctx->config);
+            if( ret == -1) {
+                return -1;
+            }
+        }
+
+        u_conn = flb_upstream_conn_get(ctx->pod_association_upstream);
         if (!u_conn) {
-            flb_plg_error(ctx->ins, "no upstream connections available to %s:%i",
-                          u->tcp_host, u->tcp_port);
-            return FLB_RETRY;
+            flb_plg_error(ctx->ins, "[kubernetes] no upstream connections available to %s:%i",
+                          ctx->pod_association_upstream->tcp_host, ctx->pod_association_upstream->tcp_port);
+            flb_upstream_destroy(ctx->pod_association_upstream);
+            flb_tls_destroy(ctx->pod_association_tls);
+            ctx->pod_association_upstream = NULL;
+            ctx->pod_association_tls = NULL;
+            return -1;
         }
 
         /* Create HTTP client */
@@ -221,7 +230,12 @@ static int fetch_pod_service_map(struct flb_kube *ctx, char *api_server_url) {
                             ctx->pod_association_port, NULL, 0);
 
         if (!c) {
-            flb_error("[kube_meta] could not create HTTP client");
+            flb_error("[kubernetes] could not create HTTP client");
+            flb_upstream_conn_release(u_conn);
+            flb_upstream_destroy(ctx->pod_association_upstream);
+            flb_tls_destroy(ctx->pod_association_tls);
+            ctx->pod_association_upstream = NULL;
+            ctx->pod_association_tls = NULL;
             return -1;
         }
 
@@ -1159,7 +1173,7 @@ static struct flb_config_map config_map[] = {
     * Will only check when "use_pod_association" config is set to true
     */
     {
-       FLB_CONFIG_MAP_STR, "pod_association_host", "127.0.0.1",
+       FLB_CONFIG_MAP_STR, "pod_association_host", "cloudwatch-agent.amazon-cloudwatch",
        0, FLB_TRUE, offsetof(struct flb_kube, pod_association_host),
        "host to connect with when performing pod to service name association"
     },
@@ -1202,7 +1216,32 @@ static struct flb_config_map config_map[] = {
         0, FLB_TRUE, offsetof(struct flb_kube, pod_service_preload_cache_dir),
         "set directory with pod to service map files"
     },
-
+    {
+    FLB_CONFIG_MAP_STR, "pod_association_host_server_ca_file", "/etc/amazon-cloudwatch-observability-agent-server-cert/tls-ca.crt",
+    0, FLB_TRUE, offsetof(struct flb_kube, pod_association_host_server_ca_file),
+    "TLS CA certificate path for communication with agent server"
+    },
+    {
+    FLB_CONFIG_MAP_STR, "pod_association_host_client_cert_file", "/etc/amazon-cloudwatch-observability-agent-client-cert/client.crt",
+    0, FLB_TRUE, offsetof(struct flb_kube, pod_association_host_client_cert_file),
+    "Client Certificate path for enabling mTLS on calls to agent server"
+    },
+    {
+    FLB_CONFIG_MAP_STR, "pod_association_host_client_key_file", "/etc/amazon-cloudwatch-observability-agent-client-cert/client.key",
+    0, FLB_TRUE, offsetof(struct flb_kube, pod_association_host_client_key_file),
+    "Client Certificate Key path for enabling mTLS on calls to agent server"
+    },
+    {
+    FLB_CONFIG_MAP_INT, "pod_association_host_tls_debug", "0",
+    0, FLB_TRUE, offsetof(struct flb_kube, pod_association_host_tls_debug),
+    "set TLS debug level: 0 (no debug), 1 (error), "
+    "2 (state change), 3 (info) and 4 (verbose)"
+    },
+    {
+    FLB_CONFIG_MAP_BOOL, "pod_association_host_tls_verify", "true",
+    0, FLB_TRUE, offsetof(struct flb_kube, pod_association_host_tls_verify),
+    "enable or disable verification of TLS peer certificate"
+   },
     /* EOF */
     {0}
 };

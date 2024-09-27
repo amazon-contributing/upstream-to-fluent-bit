@@ -354,6 +354,25 @@ static void kube_test(const char *target, int type, const char *suffix, int nExp
         clear_file(path);
     }
 
+    //Testing the default values setup
+    struct mk_list *head;
+    struct flb_filter_instance *f_ins;
+    mk_list_foreach(head, &ctx.flb->config->filters) {
+        f_ins = mk_list_entry(head, struct flb_filter_instance, _head);
+        if (strstr(f_ins->p->name, "kubernetes")) {
+            TEST_CHECK(strcmp(f_ins->p->config_map[39].name, "pod_association_host_server_ca_file") == 0);
+            TEST_CHECK(strcmp(f_ins->p->config_map[39].def_value, "/etc/amazon-cloudwatch-observability-agent-server-cert/tls-ca.crt") == 0);
+            TEST_CHECK(strcmp(f_ins->p->config_map[40].name, "pod_association_host_client_cert_file") == 0);
+            TEST_CHECK(strcmp(f_ins->p->config_map[40].def_value, "/etc/amazon-cloudwatch-observability-agent-client-cert/client.crt") == 0);
+            TEST_CHECK(strcmp(f_ins->p->config_map[41].name, "pod_association_host_client_key_file") == 0);
+            TEST_CHECK(strcmp(f_ins->p->config_map[41].def_value, "/etc/amazon-cloudwatch-observability-agent-client-cert/client.key") == 0);
+            TEST_CHECK(strcmp(f_ins->p->config_map[42].name, "pod_association_host_tls_debug") == 0);
+            TEST_CHECK(strcmp(f_ins->p->config_map[42].def_value, "0") == 0);
+            TEST_CHECK(strcmp(f_ins->p->config_map[43].name, "pod_association_host_tls_verify") == 0);
+            TEST_CHECK(strcmp(f_ins->p->config_map[43].def_value, "true") == 0);
+        }
+    }
+
     /* Start the engine */
     ret = flb_start(ctx.flb);
     TEST_CHECK_(ret == 0, "starting engine");
@@ -951,6 +970,9 @@ static void flb_test_annotations_exclude_multiple_4_container_4_stderr()
         "use_kubelet", "true", \
         "kubelet_port", "8002", \
         "Pod_Service_Preload_Cache_Dir", DPATH "/servicemap", \
+        "pod_association_host_server_ca_file", "/tst/ca.crt", \
+        "pod_association_host_client_cert_file", "/tst/client.crt", \
+        "pod_association_host_client_key_file", "/tst/client.key", \
         NULL); \
 
 static void kube_options_use_pod_association_enabled()

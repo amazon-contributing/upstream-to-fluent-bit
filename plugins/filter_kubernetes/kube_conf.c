@@ -235,6 +235,14 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
         flb_upstream_destroy(ctx->upstream);
     }
 
+    if(ctx->pod_association_tls) {
+        flb_tls_destroy(ctx->pod_association_tls);
+    }
+
+    if (ctx->pod_association_upstream) {
+        flb_upstream_destroy(ctx->pod_association_upstream);
+    }
+
 #ifdef FLB_HAVE_TLS
     if (ctx->tls) {
         flb_tls_destroy(ctx->tls);

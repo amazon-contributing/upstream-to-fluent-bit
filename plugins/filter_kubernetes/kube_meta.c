@@ -1580,11 +1580,38 @@ static int wait_for_dns(struct flb_kube *ctx)
     return -1;
 }
 
+int flb_kube_pod_association_init(struct flb_kube *ctx, struct flb_config *config) {
+    ctx->pod_association_tls = flb_tls_create(ctx->pod_association_host_tls_verify,
+                                              ctx->pod_association_host_tls_debug,
+                                              NULL, NULL,
+                                              ctx->pod_association_host_server_ca_file,
+                                              ctx->pod_association_host_client_cert_file, ctx->pod_association_host_client_key_file, NULL);
+    if (!ctx->pod_association_tls) {
+        flb_plg_error(ctx->ins, "[kube_meta] could not create TLS config for pod association host");
+        return -1;
+    }
+    ctx->pod_association_upstream = flb_upstream_create(config,
+                                                        ctx->pod_association_host,
+                                                        ctx->pod_association_port,
+                                                        FLB_IO_TLS, ctx->pod_association_tls);
+    if (!ctx->pod_association_upstream) {
+        flb_plg_error(ctx->ins, "kube network init create pod association upstream failed");
+        flb_tls_destroy(ctx->pod_association_tls);
+        ctx->pod_association_tls = NULL;
+        return -1;
+    }
+    flb_upstream_thread_safe(ctx->pod_association_upstream);
+    mk_list_init(&ctx->pod_association_upstream->_head);
+    return 0;
+}
+
 static int flb_kube_network_init(struct flb_kube *ctx, struct flb_config *config)
 {
     int io_type = FLB_IO_TCP;
 
     ctx->upstream = NULL;
+    ctx->pod_association_upstream = NULL;
+    ctx->pod_association_tls = NULL;
 
     if (ctx->api_https == FLB_TRUE) {
         if (!ctx->tls_ca_path && !ctx->tls_ca_file) {
@@ -1617,6 +1644,11 @@ static int flb_kube_network_init(struct flb_kube *ctx, struct flb_config *config
 
     /* Remove async flag from upstream */
     ctx->upstream->flags &= ~(FLB_IO_ASYNC);
+
+    /* Continue the filter kubernetes plugin functionality if the pod_association fails */
+    if(ctx->use_pod_association) {
+        flb_kube_pod_association_init(ctx, config);
+    }
 
     return 0;
 }

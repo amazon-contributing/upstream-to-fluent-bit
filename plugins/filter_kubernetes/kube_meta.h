@@ -69,5 +69,6 @@ int flb_kube_meta_get(struct flb_kube *ctx,
                       struct flb_kube_meta *meta,
                       struct flb_kube_props *props);
 int flb_kube_meta_release(struct flb_kube_meta *meta);
+int flb_kube_pod_association_init(struct flb_kube *ctx, struct flb_config *config);
 
 #endif
