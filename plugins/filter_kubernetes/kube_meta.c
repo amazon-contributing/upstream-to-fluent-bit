@@ -737,12 +737,24 @@ static void cb_results_workload(const char *name, const char *value,
     }
 }
 
+/*
+ * Search workload based on the following priority
+ * where the top is highest priority
+ * 1. Deployment name
+ * 2. StatefulSet name
+ * 3. DaemonSet name
+ * 4. Job name
+ * 5. CronJob name
+ * 6. Pod name
+ * 7. Container name
+ */
 static void search_workload(struct flb_kube_meta *meta,struct flb_kube *ctx,msgpack_object map)
 {
     int i,j,ownerIndex;
     int regex_found;
     int replicaset_match;
     int podname_match = FLB_FALSE;
+    int workload_found = FLB_FALSE;
     msgpack_object k, v;
     msgpack_object_map ownerMap;
     struct flb_regex_search result;
@@ -788,6 +800,7 @@ static void search_workload(struct flb_kube_meta *meta,struct flb_kube *ctx,msgp
                             if (strncmp(key.via.str.ptr, "name", key.via.str.size) == 0) {
                                 /* Store the value of 'name' in workload_val so it can be reused by set_workload */
                                 workload_val = val;
+                                workload_found = FLB_TRUE;
                                 if (replicaset_match) {
                                     regex_found = flb_regex_do(ctx->deploymentRegex, val.via.str.ptr, val.via.str.size, &result);
                                     if (regex_found > 0) {
@@ -806,6 +819,17 @@ static void search_workload(struct flb_kube_meta *meta,struct flb_kube *ctx,msgp
                     }
                 }
             }
+        }
+    }
+    if(!workload_found) {
+        if(meta->podname != NULL) {
+            meta->workload = flb_strndup(meta->podname, meta->podname_len);
+            meta->workload_len = meta->podname_len;
+            meta->fields++;
+        } else if (meta->container_name != NULL) {
+            meta->workload = flb_strndup(meta->container_name, meta->container_name_len);
+            meta->workload_len = meta->container_name_len;
+            meta->fields++;
         }
     }
 

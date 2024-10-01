@@ -969,6 +969,10 @@ void parse_entity(struct flb_cloudwatch *ctx, entity *entity, msgpack_object map
             }
         }
     }
+    if(entity->key_attributes->name == NULL && entity->attributes->name_source == NULL &&entity->attributes->workload != NULL) {
+        entity->key_attributes->name = flb_strndup(entity->attributes->workload, strlen(entity->attributes->workload));
+        entity->attributes->name_source = flb_strndup("K8sWorkload", 11);
+    }
 }
 
 void update_or_create_entity(struct flb_cloudwatch *ctx, struct log_stream *stream, const msgpack_object map) {
