@@ -1000,6 +1000,9 @@ void update_or_create_entity(struct flb_cloudwatch *ctx, struct log_stream *stre
         } else {
             parse_entity(ctx,stream->entity,map, map.via.map.size);
         }
+        if (!stream->entity) {
+            flb_plg_warn(ctx->ins, "Failed to generate entity");
+        }
     }
 }
 
@@ -1073,14 +1076,11 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
         map_size = map.via.map.size;
 
         stream = get_log_stream(ctx, tag, map);
-        update_or_create_entity(ctx,stream,map);
         if (!stream) {
             flb_plg_debug(ctx->ins, "Couldn't determine log group & stream for record with tag %s", tag);
             goto error;
         }
-        if (!stream->entity) {
-            flb_plg_warn(ctx->ins, "Failed to generate entity");
-        }
+        update_or_create_entity(ctx,stream,map);
 
         if (ctx->log_key) {
             key_str = NULL;
