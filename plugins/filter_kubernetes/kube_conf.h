@@ -72,6 +72,19 @@
 #define KEY_ATTRIBUTES_MAX_LEN 1024
 #define SERVICE_NAME_SOURCE_MAX_LEN 64
 
+/*
+ * Configmap used for verifying whether if FluentBit is
+ * on EKS or native Kubernetes
+ */
+#define KUBE_SYSTEM_NAMESPACE "kube-system"
+#define AWS_AUTH_CONFIG_MAP "aws-auth"
+
+/*
+ * Possible platform values for Kubernetes plugin
+ */
+#define NATIVE_KUBERNETES_PLATFORM "k8s"
+#define EKS_PLATFORM "eks"
+
 struct kube_meta;
 
 struct service_attributes {
@@ -179,7 +192,7 @@ struct flb_kube {
     int kube_meta_cache_ttl;
 
     /* Configuration used for enabling pod to service name mapping*/
-    char *use_pod_association;
+    int use_pod_association;
     char *pod_association_host;
     char *pod_association_endpoint;
     int pod_association_port;
@@ -191,8 +204,23 @@ struct flb_kube {
     struct flb_hash *pod_hash_table;
     int pod_service_map_ttl;
     int pod_service_map_refresh_interval;
-    flb_sds_t pod_service_preload_cache_dir;
+    flb_sds_t pod_service_preload_cache_path;
     struct flb_upstream *pod_association_upstream;
+    /*
+     * This connection is used for calling Kubernetes configmaps
+     * endpoint so pod association can determine the environment.
+     * Example: EKS or Native Kubernetes.
+     */
+    char *kubernetes_api_host;
+    int kubernetes_api_port;
+    struct flb_upstream *kubernetes_upstream;
+    char *platform;
+    /*
+     * This value is used for holding the platform config
+     * value. Platform will be overriden with this variable
+     * if it's set
+     */
+    char *set_platform;
 
     //Agent TLS certs
     struct flb_tls *pod_association_tls;

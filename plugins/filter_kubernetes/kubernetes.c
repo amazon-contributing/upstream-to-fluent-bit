@@ -54,7 +54,7 @@ struct mk_event_loop *evl;
  * If a file exists called service.map, load it and use it.
  * If not, fall back to API. This is primarily for unit tests purposes,
  */
-static int get_pod_service_file_info(struct flb_kube *ctx, const char *map_name,char **buffer) {
+static int get_pod_service_file_info(struct flb_kube *ctx, char **buffer) {
 
     int fd = -1;
     char *payload = NULL;
@@ -64,10 +64,10 @@ static int get_pod_service_file_info(struct flb_kube *ctx, const char *map_name,
     int ret;
     char uri[1024];
 
-    if (ctx->pod_service_preload_cache_dir && map_name) {
+    if (ctx->pod_service_preload_cache_path) {
 
-        ret = snprintf(uri, sizeof(uri) - 1, "%s/%s.map",
-                       ctx->pod_service_preload_cache_dir, map_name);
+        ret = snprintf(uri, sizeof(uri) - 1, "%s.map",
+                       ctx->pod_service_preload_cache_path);
         if (ret > 0) {
             fd = open(uri, O_RDONLY, 0);
             if (fd != -1) {
@@ -195,7 +195,7 @@ static int fetch_pod_service_map(struct flb_kube *ctx, char *api_server_url) {
 
     flb_plg_debug(ctx->ins, "fetch pod to service map");
 
-    ret = get_pod_service_file_info(ctx, "use_pod_association_enabled", &buffer);
+    ret = get_pod_service_file_info(ctx, &buffer);
     if (ret > 0 && buffer != NULL) {
         parse_pod_service_map(ctx, buffer, ret);
         flb_free(buffer);
@@ -1213,7 +1213,7 @@ static struct flb_config_map config_map[] = {
     },
     {
         FLB_CONFIG_MAP_STR, "pod_service_preload_cache_dir", NULL,
-        0, FLB_TRUE, offsetof(struct flb_kube, pod_service_preload_cache_dir),
+        0, FLB_TRUE, offsetof(struct flb_kube, pod_service_preload_cache_path),
         "set directory with pod to service map files"
     },
     {
@@ -1241,6 +1241,12 @@ static struct flb_config_map config_map[] = {
     FLB_CONFIG_MAP_BOOL, "pod_association_host_tls_verify", "true",
     0, FLB_TRUE, offsetof(struct flb_kube, pod_association_host_tls_verify),
     "enable or disable verification of TLS peer certificate"
+   },
+    {
+    FLB_CONFIG_MAP_STR, "set_platform", NULL,
+    0, FLB_TRUE, offsetof(struct flb_kube, set_platform),
+    "Set the platform that kubernetes is in. Possible values are k8s and eks"
+        "This should only be used for testing purpose"
    },
     /* EOF */
     {0}

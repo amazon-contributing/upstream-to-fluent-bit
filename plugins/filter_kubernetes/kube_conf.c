@@ -99,6 +99,12 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
             ctx->api_https = FLB_FALSE;
         }
 
+        if (ctx->use_pod_association) {
+            ctx->kubernetes_api_host = flb_strdup(FLB_API_HOST);
+            ctx->kubernetes_api_port = FLB_API_PORT;
+        }
+
+
     }
     else if (!url) {
         ctx->api_host = flb_strdup(FLB_API_HOST);
@@ -241,6 +247,16 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
 
     if (ctx->pod_association_upstream) {
         flb_upstream_destroy(ctx->pod_association_upstream);
+    }
+
+    if (ctx->kubernetes_upstream) {
+        flb_upstream_destroy(ctx->kubernetes_upstream);
+    }
+    if (ctx->kubernetes_api_host) {
+        flb_free(ctx->kubernetes_api_host);
+    }
+    if (ctx->platform) {
+        flb_free(ctx->platform);
     }
 
 #ifdef FLB_HAVE_TLS

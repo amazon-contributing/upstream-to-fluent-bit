@@ -237,10 +237,26 @@ static int entity_add_attributes(struct flb_cloudwatch *ctx, struct cw_flush *bu
                       0)) {
         goto error;
     }
-    if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
-        "\"PlatformType\":\"AWS::EKS\""
-        ,0)) {
-        goto error;
+    if (stream->entity->attributes->platform_type != NULL && strlen(stream->entity->attributes->platform_type) != 0) {
+        if (strcmp(stream->entity->attributes->platform_type, "eks") == 0) {
+            if (!snprintf(ts,ATTRIBUTES_MAX_LEN, "%s%s%s","\"PlatformType\":\"","AWS::EKS","\"")) {
+                goto error;
+            }
+        } else if (strcmp(stream->entity->attributes->platform_type, "k8s") == 0) {
+            if (!snprintf(ts,ATTRIBUTES_MAX_LEN, "%s%s%s","\"PlatformType\":\"","K8s","\"")) {
+                goto error;
+            }
+        }
+        if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
+            goto error;
+        }
+    } else {
+        if (!snprintf(ts,ATTRIBUTES_MAX_LEN, "%s%s%s","\"PlatformType\":\"","Generic","\"")) {
+            goto error;
+        }
+        if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
+            goto error;
+        }
     }
     if(stream->entity->attributes->cluster_name != NULL && strlen(stream->entity->attributes->cluster_name) != 0) {
         if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s","\"EKS.Cluster\":\"",stream->entity->attributes->cluster_name,"\"")) {
@@ -958,6 +974,10 @@ void parse_entity(struct flb_cloudwatch *ctx, entity *entity, msgpack_object map
                     } else if(strncmp(kube_key.via.str.ptr, "name_source", kube_key.via.str.size) == 0) {
                         if(entity->attributes->name_source == NULL) {
                             entity->attributes->name_source = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
+                        }
+                    } else if(strncmp(kube_key.via.str.ptr, "platform", kube_key.via.str.size) == 0) {
+                        if(entity->attributes->platform_type == NULL) {
+                            entity->attributes->platform_type = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
                         }
                     }
                 }
