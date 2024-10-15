@@ -1731,14 +1731,6 @@ int flb_kube_pod_association_init(struct flb_kube *ctx, struct flb_config *confi
     }
     flb_upstream_thread_safe(ctx->pod_association_upstream);
     mk_list_init(&ctx->pod_association_upstream->_head);
-
-    if(ctx->use_kubelet) {
-        ctx->kubernetes_upstream = flb_upstream_create(config,
-                                ctx->kubernetes_api_host,
-                                ctx->kubernetes_api_port,
-                                FLB_IO_TLS,
-                                ctx->tls);
-    }
     return 0;
 }
 
@@ -1785,6 +1777,13 @@ static int flb_kube_network_init(struct flb_kube *ctx, struct flb_config *config
 
     /* Continue the filter kubernetes plugin functionality if the pod_association fails */
     if(ctx->use_pod_association) {
+        if(ctx->use_kubelet) {
+            ctx->kubernetes_upstream = flb_upstream_create(config,
+                                    ctx->kubernetes_api_host,
+                                    ctx->kubernetes_api_port,
+                                    FLB_IO_TLS,
+                                    ctx->tls);
+        }
         flb_kube_pod_association_init(ctx, config);
     }
 

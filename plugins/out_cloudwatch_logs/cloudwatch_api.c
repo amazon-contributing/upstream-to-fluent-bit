@@ -242,24 +242,35 @@ static int entity_add_attributes(struct flb_cloudwatch *ctx, struct cw_flush *bu
             if (!snprintf(ts,ATTRIBUTES_MAX_LEN, "%s%s%s","\"PlatformType\":\"","AWS::EKS","\"")) {
                 goto error;
             }
+            if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
+                goto error;
+            }
+            if(stream->entity->attributes->cluster_name != NULL && strlen(stream->entity->attributes->cluster_name) != 0) {
+                if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s","\"EKS.Cluster\":\"",stream->entity->attributes->cluster_name,"\"")) {
+                    goto error;
+                }
+                if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
+                    goto error;
+                }
+            }
         } else if (strcmp(stream->entity->attributes->platform_type, "k8s") == 0) {
             if (!snprintf(ts,ATTRIBUTES_MAX_LEN, "%s%s%s","\"PlatformType\":\"","K8s","\"")) {
                 goto error;
             }
-        }
-        if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
-            goto error;
+            if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
+                goto error;
+            }
+            if(stream->entity->attributes->cluster_name != NULL && strlen(stream->entity->attributes->cluster_name) != 0) {
+                if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s","\"K8s.Cluster\":\"",stream->entity->attributes->cluster_name,"\"")) {
+                    goto error;
+                }
+                if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
+                    goto error;
+                }
+            }
         }
     } else {
         if (!snprintf(ts,ATTRIBUTES_MAX_LEN, "%s%s%s","\"PlatformType\":\"","Generic","\"")) {
-            goto error;
-        }
-        if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
-            goto error;
-        }
-    }
-    if(stream->entity->attributes->cluster_name != NULL && strlen(stream->entity->attributes->cluster_name) != 0) {
-        if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s","\"EKS.Cluster\":\"",stream->entity->attributes->cluster_name,"\"")) {
             goto error;
         }
         if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
