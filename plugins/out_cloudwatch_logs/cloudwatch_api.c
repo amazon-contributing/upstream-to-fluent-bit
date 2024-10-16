@@ -195,12 +195,145 @@ static inline int try_to_write(char *buf, int *off, size_t left,
     return FLB_TRUE;
 }
 
+static int entity_add_key_attributes(struct flb_cloudwatch *ctx, struct cw_flush *buf, struct log_stream *stream, int *offset) {
+    char ts[KEY_ATTRIBUTES_MAX_LEN];
+    if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
+                      "\"keyAttributes\":{",0)) {
+        goto error;
+    }
+    if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
+                        "\"Type\":\"Service\"",0)) {
+        goto error;
+    }
+    if(stream->entity->key_attributes->name != NULL && strlen(stream->entity->key_attributes->name) != 0) {
+        if (!snprintf(ts,KEY_ATTRIBUTES_MAX_LEN, ",%s%s%s","\"Name\":\"",stream->entity->key_attributes->name,"\"")) {
+            goto error;
+        }
+        if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
+            goto error;
+        }
+    }
+    if(stream->entity->key_attributes->environment != NULL && strlen(stream->entity->key_attributes->environment) != 0) {
+        if (!snprintf(ts,KEY_ATTRIBUTES_MAX_LEN, ",%s%s%s","\"Environment\":\"",stream->entity->key_attributes->environment,"\"")) {
+            goto error;
+        }
+        if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
+            goto error;
+        }
+    }
+    if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
+              "},", 2)) {
+        goto error;
+    }
+    return 0;
+error:
+    return -1;
+}
+
+static int entity_add_attributes(struct flb_cloudwatch *ctx, struct cw_flush *buf, struct log_stream *stream,int *offset) {
+    char ts[ATTRIBUTES_MAX_LEN];
+    if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
+                      "\"attributes\":{",
+                      0)) {
+        goto error;
+    }
+    if (stream->entity->attributes->platform_type != NULL && strlen(stream->entity->attributes->platform_type) != 0) {
+        if (strcmp(stream->entity->attributes->platform_type, "eks") == 0) {
+            if (!snprintf(ts,ATTRIBUTES_MAX_LEN, "%s%s%s","\"PlatformType\":\"","AWS::EKS","\"")) {
+                goto error;
+            }
+            if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
+                goto error;
+            }
+            if(stream->entity->attributes->cluster_name != NULL && strlen(stream->entity->attributes->cluster_name) != 0) {
+                if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s","\"EKS.Cluster\":\"",stream->entity->attributes->cluster_name,"\"")) {
+                    goto error;
+                }
+                if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
+                    goto error;
+                }
+            }
+        } else if (strcmp(stream->entity->attributes->platform_type, "k8s") == 0) {
+            if (!snprintf(ts,ATTRIBUTES_MAX_LEN, "%s%s%s","\"PlatformType\":\"","K8s","\"")) {
+                goto error;
+            }
+            if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
+                goto error;
+            }
+            if(stream->entity->attributes->cluster_name != NULL && strlen(stream->entity->attributes->cluster_name) != 0) {
+                if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s","\"K8s.Cluster\":\"",stream->entity->attributes->cluster_name,"\"")) {
+                    goto error;
+                }
+                if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
+                    goto error;
+                }
+            }
+        }
+    } else {
+        if (!snprintf(ts,ATTRIBUTES_MAX_LEN, "%s%s%s","\"PlatformType\":\"","Generic","\"")) {
+            goto error;
+        }
+        if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
+            goto error;
+        }
+    }
+    if(stream->entity->attributes->namespace != NULL && strlen(stream->entity->attributes->namespace) != 0) {
+        if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s","\"K8s.Namespace\":\"",stream->entity->attributes->namespace,"\"")) {
+            goto error;
+        }
+        if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
+            goto error;
+        }
+    }
+    if(stream->entity->attributes->node != NULL && strlen(stream->entity->attributes->node) != 0) {
+        if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s","\"K8s.Node\":\"",buf->current_stream->entity->attributes->node,"\"")) {
+            goto error;
+        }
+        if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
+            goto error;
+        }
+    }
+    if(stream->entity->attributes->workload != NULL && strlen(stream->entity->attributes->workload) != 0) {
+        if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s","\"K8s.Workload\":\"",buf->current_stream->entity->attributes->workload,"\"")) {
+            goto error;
+        }
+        if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
+            goto error;
+        }
+    }
+    if(stream->entity->attributes->instance_id != NULL && strlen(stream->entity->attributes->instance_id) != 0) {
+        if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s","\"EC2.InstanceId\":\"",buf->current_stream->entity->attributes->instance_id,"\"")) {
+            goto error;
+        }
+        if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
+            goto error;
+        }
+    }
+    if(stream->entity->attributes->name_source != NULL && strlen(stream->entity->attributes->name_source) != 0) {
+        if (!snprintf(ts,ATTRIBUTES_MAX_LEN, ",%s%s%s","\"AWS.ServiceNameSource\":\"",buf->current_stream->entity->attributes->name_source,"\"")) {
+            goto error;
+        }
+        if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
+            goto error;
+        }
+    }
+
+    if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
+                  "}", 1)) {
+        goto error;
+    }
+    return 0;
+error:
+    return -1;
+}
+
 /*
  * Writes the "header" for a put log events payload
  */
 static int init_put_payload(struct flb_cloudwatch *ctx, struct cw_flush *buf,
                             struct log_stream *stream, int *offset)
 {
+    int ret;
     if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
                       "{\"logGroupName\":\"", 17)) {
         goto error;
@@ -224,6 +357,34 @@ static int init_put_payload(struct flb_cloudwatch *ctx, struct cw_flush *buf,
     if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
                       "\",", 2)) {
         goto error;
+    }
+    // If we are missing the service name, the entity will get rejected by the frontend anyway
+    // so do not emit entity unless service name is filled
+    if(ctx->add_entity && stream->entity != NULL && stream->entity->key_attributes->name != NULL) {
+        if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
+                      "\"entity\":{", 10)) {
+            goto error;
+        }
+
+        if(stream->entity->key_attributes != NULL) {
+            ret = entity_add_key_attributes(ctx,buf,stream,offset);
+            if (ret < 0) {
+                flb_plg_error(ctx->ins, "Failed to initialize Entity KeyAttributes");
+                goto error;
+            }
+        }
+        if(stream->entity->attributes != NULL) {
+            ret = entity_add_attributes(ctx,buf,stream,offset);
+            if (ret < 0) {
+                flb_plg_error(ctx->ins, "Failed to initialize Entity Attributes");
+                goto error;
+            }
+        }
+        if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
+                      "},", 2)) {
+            goto error;
+        }
+
     }
 
     if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
@@ -782,6 +943,107 @@ int pack_emf_payload(struct flb_cloudwatch *ctx,
     return 0;
 }
 
+void parse_entity(struct flb_cloudwatch *ctx, entity *entity, msgpack_object map, int map_size) {
+    int i,j;
+    msgpack_object key, kube_key;
+    msgpack_object val, kube_val;
+
+    int val_map_size;
+    for(i=0; i < map_size; i++) {
+        key = map.via.map.ptr[i].key;
+        val = map.via.map.ptr[i].val;
+        if(strncmp(key.via.str.ptr, "kubernetes",10 ) == 0 ) {
+            if (val.type == MSGPACK_OBJECT_MAP) {
+                val_map_size = val.via.map.size;
+                for (j=0; j < val_map_size; j++) {
+                    kube_key = val.via.map.ptr[j].key;
+                    kube_val = val.via.map.ptr[j].val;
+                    if(strncmp(kube_key.via.str.ptr, "service_name", kube_key.via.str.size) == 0) {
+                        if(entity->key_attributes->name != NULL) {
+                            flb_free(entity->key_attributes->name);
+                        }
+                        entity->key_attributes->name = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
+                    } else if(strncmp(kube_key.via.str.ptr, "environment", kube_key.via.str.size) == 0) {
+                        if(entity->key_attributes->environment != NULL) {
+                            flb_free(entity->key_attributes->environment);
+                        }
+                        entity->key_attributes->environment = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
+                    } else if(strncmp(kube_key.via.str.ptr, "namespace_name", kube_key.via.str.size) == 0) {
+                        if(entity->attributes->namespace != NULL) {
+                            flb_free(entity->attributes->namespace);
+                        }
+                       entity->attributes->namespace = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
+                    } else if(strncmp(kube_key.via.str.ptr, "host", kube_key.via.str.size) == 0) {
+                        if(entity->attributes->node != NULL) {
+                            flb_free(entity->attributes->node);
+                        }
+                        entity->attributes->node = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
+                    } else if(strncmp(kube_key.via.str.ptr, "cluster", kube_key.via.str.size) == 0) {
+                        if(entity->attributes->cluster_name != NULL) {
+                            flb_free(entity->attributes->cluster_name);
+                        }
+                        entity->attributes->cluster_name = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
+                    } else if(strncmp(kube_key.via.str.ptr, "workload", kube_key.via.str.size) == 0) {
+                        if(entity->attributes->workload != NULL) {
+                            flb_free(entity->attributes->workload);
+                        }
+                        entity->attributes->workload = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
+                    } else if(strncmp(kube_key.via.str.ptr, "name_source", kube_key.via.str.size) == 0) {
+                        if(entity->attributes->name_source != NULL) {
+                            flb_free(entity->attributes->name_source);
+                        }
+                        entity->attributes->name_source = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
+                    } else if(strncmp(kube_key.via.str.ptr, "platform", kube_key.via.str.size) == 0) {
+                        if(entity->attributes->platform_type != NULL) {
+                            flb_free(entity->attributes->platform_type);
+                        }
+                        entity->attributes->platform_type = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
+                    }
+                }
+            }
+        }
+        if(strncmp(key.via.str.ptr, "ec2_instance_id",key.via.str.size ) == 0 ) {
+            if(entity->attributes->instance_id != NULL) {
+                flb_free(entity->attributes->instance_id);
+            }
+            entity->attributes->instance_id = flb_strndup(val.via.str.ptr, val.via.str.size);
+        }
+    }
+    if(entity->key_attributes->name == NULL && entity->attributes->name_source == NULL &&entity->attributes->workload != NULL) {
+        entity->key_attributes->name = flb_strndup(entity->attributes->workload, strlen(entity->attributes->workload));
+        entity->attributes->name_source = flb_strndup("K8sWorkload", 11);
+    }
+}
+
+void update_or_create_entity(struct flb_cloudwatch *ctx, struct log_stream *stream, const msgpack_object map) {
+        if(stream->entity == NULL) {
+            stream->entity = flb_malloc(sizeof(entity));
+            if (stream->entity == NULL) {
+                return;
+            }
+            memset(stream->entity, 0, sizeof(entity));
+
+            stream->entity->key_attributes = flb_malloc(sizeof(entity_key_attributes));
+            if (stream->entity->key_attributes == NULL) {
+                return;
+            }
+            memset(stream->entity->key_attributes, 0, sizeof(entity_key_attributes));
+
+            stream->entity->attributes = flb_malloc(sizeof(entity_attributes));
+            if (stream->entity->attributes == NULL) {
+                return;
+            }
+            memset(stream->entity->attributes, 0, sizeof(entity_attributes));
+
+            parse_entity(ctx,stream->entity,map, map.via.map.size);
+        } else {
+            parse_entity(ctx,stream->entity,map, map.via.map.size);
+        }
+        if (!stream->entity) {
+            flb_plg_warn(ctx->ins, "Failed to generate entity");
+        }
+}
+
 /*
  * Main routine- processes msgpack and sends in batches which ignore the empty ones
  * return value is the number of events processed and send.
@@ -855,6 +1117,9 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
         if (!stream) {
             flb_plg_debug(ctx->ins, "Couldn't determine log group & stream for record with tag %s", tag);
             goto error;
+        }
+        if(ctx->kubernete_metadata_enabled && ctx->add_entity) {
+            update_or_create_entity(ctx,stream,map);
         }
 
         if (ctx->log_key) {
@@ -1420,6 +1685,8 @@ retry_request:
 
     if (c) {
         flb_plg_debug(ctx->ins, "PutLogEvents http status=%d", c->resp.status);
+        flb_plg_debug(ctx->ins, "PutLogEvents http data=%s", c->resp.data);
+        flb_plg_debug(ctx->ins, "PutLogEvents http payload=%s", c->resp.payload);
 
         if (c->resp.status == 200) {
             if (c->resp.data == NULL || c->resp.data_len == 0 || strstr(c->resp.data, AMZN_REQUEST_ID_HEADER) == NULL) {
