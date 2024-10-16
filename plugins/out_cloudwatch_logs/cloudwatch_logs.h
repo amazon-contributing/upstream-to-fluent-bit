@@ -186,6 +186,8 @@ struct flb_cloudwatch {
      */
 
     int kubernete_metadata_enabled;
+
+    int add_entity;
 };
 
 void flb_cloudwatch_ctx_destroy(struct flb_cloudwatch *ctx);

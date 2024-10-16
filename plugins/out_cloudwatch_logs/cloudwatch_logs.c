@@ -669,6 +669,12 @@ static struct flb_config_map config_map[] = {
      "is 'd1,d2;d3', we will consider it as [[d1, d2],[d3]]."
     },
 
+    {
+    FLB_CONFIG_MAP_BOOL, "add_entity", "false",
+    0, FLB_TRUE, offsetof(struct flb_cloudwatch, add_entity),
+    "add entity to PutLogEvent calls"
+   },
+
     /* EOF */
     {0}
 };

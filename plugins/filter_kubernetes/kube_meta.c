@@ -1192,7 +1192,9 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
                 k = api_map.via.map.ptr[i].key;
                 if (k.via.str.size == 8 && !strncmp(k.via.str.ptr, "metadata", 8)) {
                     meta_val = api_map.via.map.ptr[i].val;
-                    search_workload(meta,ctx,meta_val);
+                    if(ctx ->use_pod_association) {
+                        search_workload(meta,ctx,meta_val);
+                    }
                     if (meta_val.type == MSGPACK_OBJECT_MAP) {
                         meta_found = FLB_TRUE;
                     }
@@ -1259,11 +1261,12 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
         }
     }
     int fallback_environment_len = 0;
-    char *fallback_environment = find_fallback_environment(ctx,meta);
-    if(fallback_environment) {
-        fallback_environment_len = strlen(fallback_environment);
-    }
+    char *fallback_environment = NULL;
     if(ctx->use_pod_association) {
+        fallback_environment = find_fallback_environment(ctx,meta);
+        if(fallback_environment) {
+            fallback_environment_len = strlen(fallback_environment);
+        }
         pod_service_found = flb_hash_get(ctx->pod_hash_table,
                                  meta->podname, meta->podname_len,
                                  &tmp_service_attributes, &tmp_service_attr_size);
@@ -1286,12 +1289,6 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
 
     /* Append Regex fields */
     msgpack_pack_map(&mp_pck, map_size);
-    if (meta->cluster != NULL) {
-        msgpack_pack_str(&mp_pck, 7);
-        msgpack_pack_str_body(&mp_pck, "cluster", 7);
-        msgpack_pack_str(&mp_pck, meta->cluster_len);
-        msgpack_pack_str_body(&mp_pck, meta->cluster, meta->cluster_len);
-    }
     if (meta->podname != NULL) {
         msgpack_pack_str(&mp_pck, 8);
         msgpack_pack_str_body(&mp_pck, "pod_name", 8);
@@ -1343,13 +1340,18 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
             msgpack_pack_str(&mp_pck, platform_len);
             msgpack_pack_str_body(&mp_pck, ctx->platform, platform_len);
         }
-    }
-
-    if (meta->workload != NULL) {
-        msgpack_pack_str(&mp_pck, 8);
-        msgpack_pack_str_body(&mp_pck, "workload", 8);
-        msgpack_pack_str(&mp_pck, meta->workload_len);
-        msgpack_pack_str_body(&mp_pck, meta->workload, meta->workload_len);
+        if (meta->cluster != NULL) {
+            msgpack_pack_str(&mp_pck, 7);
+            msgpack_pack_str_body(&mp_pck, "cluster", 7);
+            msgpack_pack_str(&mp_pck, meta->cluster_len);
+            msgpack_pack_str_body(&mp_pck, meta->cluster, meta->cluster_len);
+        }
+        if (meta->workload != NULL) {
+            msgpack_pack_str(&mp_pck, 8);
+            msgpack_pack_str_body(&mp_pck, "workload", 8);
+            msgpack_pack_str(&mp_pck, meta->workload_len);
+            msgpack_pack_str_body(&mp_pck, meta->workload, meta->workload_len);
+        }
     }
 
     /* Append API Server content */
@@ -1655,7 +1657,9 @@ static int get_and_merge_meta(struct flb_kube *ctx, struct flb_kube_meta *meta,
     int ret;
     char *api_buf;
     size_t api_size;
-    get_cluster_from_environment(ctx, meta);
+    if(ctx->use_pod_association) {
+        get_cluster_from_environment(ctx, meta);
+    }
     if (ctx->use_tag_for_meta) {
         ret = merge_meta_from_tag(ctx, meta, out_buf, out_size);
         return ret;

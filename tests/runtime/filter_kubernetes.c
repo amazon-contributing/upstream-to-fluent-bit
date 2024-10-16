@@ -448,24 +448,48 @@ static void flb_test_options_use_kubelet_enabled_json()
     flb_test_options_use_kubelet_enabled("options_use-kubelet-enabled_fluent-bit", NULL, 1);
 }
 
+#define flb_test_pod_to_service_map_use_kubelet_true(target, suffix, nExpected, platform) \
+    kube_test("options/" target, KUBE_POD_ASSOCIATION, suffix, nExpected, \
+                "use_pod_association", "true", \
+                "use_kubelet", "true", \
+                "kubelet_port", "8002", \
+                "Pod_Service_Preload_Cache_Dir", DPATH "/servicemap/" target, \
+                "pod_association_host_server_ca_file", "/tst/ca.crt", \
+                "pod_association_host_client_cert_file", "/tst/client.crt", \
+                "pod_association_host_client_key_file", "/tst/client.key", \
+                "set_platform", platform, \
+                NULL); \
+
+#define flb_test_pod_to_service_map_use_kubelet_false(target, suffix, nExpected, platform) \
+    kube_test("options/" target, KUBE_POD_ASSOCIATION, suffix, nExpected, \
+                "use_pod_association", "true", \
+                "use_kubelet", "false", \
+                "kubelet_port", "8002", \
+                "Pod_Service_Preload_Cache_Dir", DPATH "/servicemap/" target, \
+                "pod_association_host_server_ca_file", "/tst/ca.crt", \
+                "pod_association_host_client_cert_file", "/tst/client.crt", \
+                "pod_association_host_client_key_file", "/tst/client.key", \
+                "set_platform", platform, \
+                NULL); \
+
 static void flb_test_options_use_kubelet_enabled_replicaset_json()
 {
-    flb_test_options_use_kubelet_enabled("options_use-kubelet-enabled-replicaset_fluent-bit", NULL, 1);
+    flb_test_pod_to_service_map_use_kubelet_true("options_use-kubelet-enabled-replicaset_fluent-bit", NULL, 1, NULL);
 }
 
 static void flb_test_options_use_kubelet_enabled_deployment_json()
 {
-    flb_test_options_use_kubelet_enabled("options_use-kubelet-enabled-deployment_fluent-bit", NULL, 1);
+    flb_test_pod_to_service_map_use_kubelet_true("options_use-kubelet-enabled-deployment_fluent-bit", NULL, 1, NULL);
 }
 
 static void flb_test_options_use_kubelet_enabled_daemonset_json()
 {
-    flb_test_options_use_kubelet_enabled("options_use-kubelet-enabled-daemonset_fluent-bit", NULL, 1);
+    flb_test_pod_to_service_map_use_kubelet_true("options_use-kubelet-enabled-daemonset_fluent-bit", NULL, 1, NULL);
 }
 
 static void flb_test_options_use_kubelet_enabled_pod_json()
 {
-    flb_test_options_use_kubelet_enabled("options_use-kubelet-enabled-pod_fluent-bit", NULL, 1);
+    flb_test_pod_to_service_map_use_kubelet_true("options_use-kubelet-enabled-pod_fluent-bit", NULL, 1, NULL);
 }
 
 static void flb_test_options_use_kubelet_disabled_json()
@@ -475,22 +499,22 @@ static void flb_test_options_use_kubelet_disabled_json()
 
 static void flb_test_options_use_kubelet_disabled_replicaset_json()
 {
-    flb_test_options_use_kubelet_disabled("options_use-kubelet-disabled-replicaset_fluent-bit", NULL, 1);
+    flb_test_pod_to_service_map_use_kubelet_false("options_use-kubelet-disabled-replicaset_fluent-bit", NULL, 1, NULL);
 }
 
 static void flb_test_options_use_kubelet_disabled_deployment_json()
 {
-    flb_test_options_use_kubelet_disabled("options_use-kubelet-disabled-deployment_fluent-bit", NULL, 1);
+    flb_test_pod_to_service_map_use_kubelet_false("options_use-kubelet-disabled-deployment_fluent-bit", NULL, 1, NULL);
 }
 
 static void flb_test_options_use_kubelet_disabled_daemonset_json()
 {
-    flb_test_options_use_kubelet_disabled("options_use-kubelet-disabled-daemonset_fluent-bit", NULL, 1);
+    flb_test_pod_to_service_map_use_kubelet_false("options_use-kubelet-disabled-daemonset_fluent-bit", NULL, 1, NULL);
 }
 
 static void flb_test_options_use_kubelet_disabled_pod_json()
 {
-    flb_test_options_use_kubelet_disabled("options_use-kubelet-disabled-pod_fluent-bit", NULL, 1);
+    flb_test_pod_to_service_map_use_kubelet_false("options_use-kubelet-disabled-pod_fluent-bit", NULL, 1, NULL);
 }
 
 
@@ -974,27 +998,15 @@ static void flb_test_annotations_exclude_multiple_4_container_4_stderr()
     flb_test_annotations_exclude("annotations-exclude_multiple-4_container-4", "stderr", 1);
 }
 
-#define flb_test_pod_to_service_map(target, suffix, nExpected, platform) \
-        kube_test("options/" target, KUBE_POD_ASSOCIATION, suffix, nExpected, \
-        "use_pod_association", "true", \
-        "use_kubelet", "true", \
-        "kubelet_port", "8002", \
-        "Pod_Service_Preload_Cache_Dir", DPATH "/servicemap/" target, \
-        "pod_association_host_server_ca_file", "/tst/ca.crt", \
-        "pod_association_host_client_cert_file", "/tst/client.crt", \
-        "pod_association_host_client_key_file", "/tst/client.key", \
-        "set_platform", platform, \
-        NULL); \
-
 static void kube_options_use_pod_association_enabled()
 {
-    flb_test_pod_to_service_map("options_use-pod-association-enabled_fluent-bit", NULL, 1, NULL);
+    flb_test_pod_to_service_map_use_kubelet_true("options_use-pod-association-enabled_fluent-bit", NULL, 1, NULL);
 }
 
 static void kube_options_use_pod_association_enabled_fallback_env()
 {
     setenv("CLUSTER_NAME","test-cluster", 1);
-    flb_test_pod_to_service_map("options_use-pod-association-enabled-fallback-env_fluent-bit", NULL, 1, "eks");
+    flb_test_pod_to_service_map_use_kubelet_true("options_use-pod-association-enabled-fallback-env_fluent-bit", NULL, 1, "eks");
 }
 
 #ifdef FLB_HAVE_SYSTEMD

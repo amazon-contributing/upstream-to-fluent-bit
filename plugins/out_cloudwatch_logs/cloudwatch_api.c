@@ -360,7 +360,7 @@ static int init_put_payload(struct flb_cloudwatch *ctx, struct cw_flush *buf,
     }
     // If we are missing the service name, the entity will get rejected by the frontend anyway
     // so do not emit entity unless service name is filled
-    if(stream->entity != NULL && stream->entity->key_attributes->name != NULL) {
+    if(ctx->add_entity && stream->entity != NULL && stream->entity->key_attributes->name != NULL) {
         if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
                       "\"entity\":{", 10)) {
             goto error;
@@ -959,45 +959,54 @@ void parse_entity(struct flb_cloudwatch *ctx, entity *entity, msgpack_object map
                     kube_key = val.via.map.ptr[j].key;
                     kube_val = val.via.map.ptr[j].val;
                     if(strncmp(kube_key.via.str.ptr, "service_name", kube_key.via.str.size) == 0) {
-                        if(entity->key_attributes->name == NULL) {
-                            entity->key_attributes->name = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
+                        if(entity->key_attributes->name != NULL) {
+                            flb_free(entity->key_attributes->name);
                         }
+                        entity->key_attributes->name = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
                     } else if(strncmp(kube_key.via.str.ptr, "environment", kube_key.via.str.size) == 0) {
-                        if(entity->key_attributes->environment == NULL) {
-                            entity->key_attributes->environment = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
+                        if(entity->key_attributes->environment != NULL) {
+                            flb_free(entity->key_attributes->environment);
                         }
+                        entity->key_attributes->environment = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
                     } else if(strncmp(kube_key.via.str.ptr, "namespace_name", kube_key.via.str.size) == 0) {
-                        if(entity->attributes->namespace == NULL) {
-                            entity->attributes->namespace = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
+                        if(entity->attributes->namespace != NULL) {
+                            flb_free(entity->attributes->namespace);
                         }
+                       entity->attributes->namespace = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
                     } else if(strncmp(kube_key.via.str.ptr, "host", kube_key.via.str.size) == 0) {
-                        if(entity->attributes->node == NULL) {
-                            entity->attributes->node = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
+                        if(entity->attributes->node != NULL) {
+                            flb_free(entity->attributes->node);
                         }
+                        entity->attributes->node = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
                     } else if(strncmp(kube_key.via.str.ptr, "cluster", kube_key.via.str.size) == 0) {
-                        if(entity->attributes->cluster_name == NULL) {
-                            entity->attributes->cluster_name = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
+                        if(entity->attributes->cluster_name != NULL) {
+                            flb_free(entity->attributes->cluster_name);
                         }
+                        entity->attributes->cluster_name = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
                     } else if(strncmp(kube_key.via.str.ptr, "workload", kube_key.via.str.size) == 0) {
-                        if(entity->attributes->workload == NULL) {
-                            entity->attributes->workload = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
+                        if(entity->attributes->workload != NULL) {
+                            flb_free(entity->attributes->workload);
                         }
+                        entity->attributes->workload = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
                     } else if(strncmp(kube_key.via.str.ptr, "name_source", kube_key.via.str.size) == 0) {
-                        if(entity->attributes->name_source == NULL) {
-                            entity->attributes->name_source = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
+                        if(entity->attributes->name_source != NULL) {
+                            flb_free(entity->attributes->name_source);
                         }
+                        entity->attributes->name_source = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
                     } else if(strncmp(kube_key.via.str.ptr, "platform", kube_key.via.str.size) == 0) {
-                        if(entity->attributes->platform_type == NULL) {
-                            entity->attributes->platform_type = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
+                        if(entity->attributes->platform_type != NULL) {
+                            flb_free(entity->attributes->platform_type);
                         }
+                        entity->attributes->platform_type = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
                     }
                 }
             }
         }
         if(strncmp(key.via.str.ptr, "ec2_instance_id",key.via.str.size ) == 0 ) {
-            if(entity->attributes->instance_id == NULL) {
-                entity->attributes->instance_id = flb_strndup(val.via.str.ptr, val.via.str.size);
+            if(entity->attributes->instance_id != NULL) {
+                flb_free(entity->attributes->instance_id);
             }
+            entity->attributes->instance_id = flb_strndup(val.via.str.ptr, val.via.str.size);
         }
     }
     if(entity->key_attributes->name == NULL && entity->attributes->name_source == NULL &&entity->attributes->workload != NULL) {
@@ -1007,7 +1016,6 @@ void parse_entity(struct flb_cloudwatch *ctx, entity *entity, msgpack_object map
 }
 
 void update_or_create_entity(struct flb_cloudwatch *ctx, struct log_stream *stream, const msgpack_object map) {
-    if(ctx->kubernete_metadata_enabled) {
         if(stream->entity == NULL) {
             stream->entity = flb_malloc(sizeof(entity));
             if (stream->entity == NULL) {
@@ -1034,7 +1042,6 @@ void update_or_create_entity(struct flb_cloudwatch *ctx, struct log_stream *stre
         if (!stream->entity) {
             flb_plg_warn(ctx->ins, "Failed to generate entity");
         }
-    }
 }
 
 /*
@@ -1111,7 +1118,9 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
             flb_plg_debug(ctx->ins, "Couldn't determine log group & stream for record with tag %s", tag);
             goto error;
         }
-        update_or_create_entity(ctx,stream,map);
+        if(ctx->kubernete_metadata_enabled && ctx->add_entity) {
+            update_or_create_entity(ctx,stream,map);
+        }
 
         if (ctx->log_key) {
             key_str = NULL;
