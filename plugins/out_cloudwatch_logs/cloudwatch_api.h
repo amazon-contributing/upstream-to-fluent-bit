@@ -44,6 +44,10 @@
 /* 256KiB minus 26 bytes for the event */
 #define MAX_EVENT_LEN      262118
 
+/* Prefix used for entity fields only */
+#define AWS_ENTITY_PREFIX "aws_entity"
+#define AWS_ENTITY_PREFIX_LEN 10
+
 #include "cloudwatch_logs.h"
 
 void cw_flush_destroy(struct cw_flush *buf);

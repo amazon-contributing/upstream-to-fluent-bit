@@ -1028,27 +1028,6 @@ static int search_item_in_items(struct flb_kube_meta *meta,
     return ret;
 }
 
-static char* find_fallback_environment(struct flb_kube *ctx, struct flb_kube_meta *meta) {
-    char *fallback_env = NULL;
-
-    /*
-     * Possible fallback environments:
-     * 1. eks:cluster-name/namespace
-     * 2. k8s:cluster-name/namespace
-     */
-    if(ctx->platform == NULL && ctx->set_platform != NULL) {
-        ctx->platform = flb_strdup(ctx->set_platform);
-    }
-    if (ctx->platform != NULL && meta->cluster != NULL && meta->namespace != NULL) {
-        int ret = asprintf(&fallback_env, "%s:%s/%s", ctx->platform, meta->cluster, meta->namespace);
-        if (ret == -1) {
-            return NULL;
-        }
-        return fallback_env;
-    }
-    return NULL;
-}
-
 static int merge_meta_from_tag(struct flb_kube *ctx, struct flb_kube_meta *meta,
                                char **out_buf, size_t *out_size)
 {
@@ -1260,24 +1239,12 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
             }
         }
     }
-    int fallback_environment_len = 0;
-    char *fallback_environment = NULL;
     if(ctx->use_pod_association) {
-        fallback_environment = find_fallback_environment(ctx,meta);
-        if(fallback_environment) {
-            fallback_environment_len = strlen(fallback_environment);
-        }
         pod_service_found = flb_hash_get(ctx->pod_hash_table,
                                  meta->podname, meta->podname_len,
                                  &tmp_service_attributes, &tmp_service_attr_size);
         if (pod_service_found != -1 && tmp_service_attributes != NULL) {
             map_size += tmp_service_attributes->fields;
-        }
-        if(pod_service_found != -1 && tmp_service_attributes != NULL && tmp_service_attributes->environment[0] == '\0' && fallback_environment) {
-            map_size++;
-        }
-        if(pod_service_found == -1 && meta->workload != NULL && fallback_environment) {
-            map_size++;
         }
         if(ctx->platform) {
             map_size++;
@@ -1304,51 +1271,41 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
     if(ctx->use_pod_association) {
         if (pod_service_found != -1 && tmp_service_attributes != NULL) {
             if (tmp_service_attributes->name[0] != '\0') {
-                msgpack_pack_str(&mp_pck, 12);
-                msgpack_pack_str_body(&mp_pck, "service_name", 12);
+                msgpack_pack_str(&mp_pck, 23);
+                msgpack_pack_str_body(&mp_pck, "aws_entity_service_name", 23);
                 msgpack_pack_str(&mp_pck, tmp_service_attributes->name_len);
                 msgpack_pack_str_body(&mp_pck, tmp_service_attributes->name, tmp_service_attributes->name_len);
             }
             if (tmp_service_attributes->environment[0] != '\0') {
-                msgpack_pack_str(&mp_pck, 11);
-                msgpack_pack_str_body(&mp_pck, "environment", 11);
+                msgpack_pack_str(&mp_pck, 22);
+                msgpack_pack_str_body(&mp_pck, "aws_entity_environment", 22);
                 msgpack_pack_str(&mp_pck, tmp_service_attributes->environment_len);
                 msgpack_pack_str_body(&mp_pck, tmp_service_attributes->environment, tmp_service_attributes->environment_len);
-            } else if(tmp_service_attributes->environment[0] == '\0' && fallback_environment) {
-                msgpack_pack_str(&mp_pck, 11);
-                msgpack_pack_str_body(&mp_pck, "environment", 11);
-                msgpack_pack_str(&mp_pck, fallback_environment_len);
-                msgpack_pack_str_body(&mp_pck, fallback_environment, fallback_environment_len);
             }
             if (tmp_service_attributes->name_source[0] != '\0') {
-                msgpack_pack_str(&mp_pck, 11);
-                msgpack_pack_str_body(&mp_pck, "name_source", 11);
+                msgpack_pack_str(&mp_pck, 22);
+                msgpack_pack_str_body(&mp_pck, "aws_entity_name_source", 22);
                 msgpack_pack_str(&mp_pck, tmp_service_attributes->name_source_len);
                 msgpack_pack_str_body(&mp_pck, tmp_service_attributes->name_source, tmp_service_attributes->name_source_len);
             }
-        } else if ( pod_service_found == -1 && meta->workload != NULL && fallback_environment) {
-            msgpack_pack_str(&mp_pck, 11);
-            msgpack_pack_str_body(&mp_pck, "environment", 11);
-            msgpack_pack_str(&mp_pck, fallback_environment_len);
-            msgpack_pack_str_body(&mp_pck, fallback_environment, fallback_environment_len);
         }
 
         if(ctx->platform != NULL) {
             int platform_len = strlen(ctx->platform);
-            msgpack_pack_str(&mp_pck, 8);
-            msgpack_pack_str_body(&mp_pck, "platform", 8);
+            msgpack_pack_str(&mp_pck, 19);
+            msgpack_pack_str_body(&mp_pck, "aws_entity_platform", 19);
             msgpack_pack_str(&mp_pck, platform_len);
             msgpack_pack_str_body(&mp_pck, ctx->platform, platform_len);
         }
         if (meta->cluster != NULL) {
-            msgpack_pack_str(&mp_pck, 7);
-            msgpack_pack_str_body(&mp_pck, "cluster", 7);
+            msgpack_pack_str(&mp_pck, 18);
+            msgpack_pack_str_body(&mp_pck, "aws_entity_cluster", 18);
             msgpack_pack_str(&mp_pck, meta->cluster_len);
             msgpack_pack_str_body(&mp_pck, meta->cluster, meta->cluster_len);
         }
         if (meta->workload != NULL) {
-            msgpack_pack_str(&mp_pck, 8);
-            msgpack_pack_str_body(&mp_pck, "workload", 8);
+            msgpack_pack_str(&mp_pck, 19);
+            msgpack_pack_str_body(&mp_pck, "aws_entity_workload", 19);
             msgpack_pack_str(&mp_pck, meta->workload_len);
             msgpack_pack_str_body(&mp_pck, meta->workload, meta->workload_len);
         }
@@ -1459,10 +1416,6 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
     /* Set outgoing msgpack buffer */
     *out_buf = mp_sbuf.data;
     *out_size = mp_sbuf.size;
-
-    if(fallback_environment) {
-        flb_free(fallback_environment);
-    }
 
     return 0;
 }

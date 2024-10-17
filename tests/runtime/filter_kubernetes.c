@@ -1003,12 +1003,6 @@ static void kube_options_use_pod_association_enabled()
     flb_test_pod_to_service_map_use_kubelet_true("options_use-pod-association-enabled_fluent-bit", NULL, 1, NULL);
 }
 
-static void kube_options_use_pod_association_enabled_fallback_env()
-{
-    setenv("CLUSTER_NAME","test-cluster", 1);
-    flb_test_pod_to_service_map_use_kubelet_true("options_use-pod-association-enabled-fallback-env_fluent-bit", NULL, 1, "eks");
-}
-
 #ifdef FLB_HAVE_SYSTEMD
 #define CONTAINER_NAME "CONTAINER_NAME=k8s_kairosdb_kairosdb-914055854-b63vq_default_d6c53deb-05a4-11e8-a8c4-080027435fb7_23"
 #include <systemd/sd-journal.h>
@@ -1100,7 +1094,6 @@ TEST_LIST = {
     {"kube_core_unescaping_text", flb_test_core_unescaping_text},
     {"kube_core_unescaping_json", flb_test_core_unescaping_json},
     {"kube_options_use_pod_association_enabled", kube_options_use_pod_association_enabled},
-    {"kube_options_use_pod_association_enabled_fallback_env", kube_options_use_pod_association_enabled_fallback_env},
     {"kube_options_use-kubelet_enabled_json", flb_test_options_use_kubelet_enabled_json},
     {"kube_options_use-kubelet_enabled_replicateset_json", flb_test_options_use_kubelet_enabled_replicaset_json},
     {"kube_options_use-kubelet_enabled_deployment_json", flb_test_options_use_kubelet_enabled_deployment_json},
