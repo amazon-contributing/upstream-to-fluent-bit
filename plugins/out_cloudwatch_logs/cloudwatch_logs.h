@@ -35,6 +35,8 @@
 typedef struct entity {
     struct entity_key_attributes *key_attributes;
     struct entity_attributes *attributes;
+    int filter_count;
+    int root_filter_count;
 }entity;
 
 /* KeyAttributes used for CloudWatch Entity object
