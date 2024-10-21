@@ -51,6 +51,8 @@
 #define FLB_FILTER_AWS_AVAILABILITY_ZONE_KEY_LEN          2
 #define FLB_FILTER_AWS_INSTANCE_ID_KEY                    "ec2_instance_id"
 #define FLB_FILTER_AWS_INSTANCE_ID_KEY_LEN                15
+#define FLB_FILTER_AWS_ENTITY_INSTANCE_ID_KEY             "aws_entity_ec2_instance_id"
+#define FLB_FILTER_AWS_ENTITY_INSTANCE_ID_KEY_LEN         26
 #define FLB_FILTER_AWS_INSTANCE_TYPE_KEY                  "ec2_instance_type"
 #define FLB_FILTER_AWS_INSTANCE_TYPE_KEY_LEN              17
 #define FLB_FILTER_AWS_PRIVATE_IP_KEY                     "private_ip"
@@ -110,6 +112,12 @@ struct flb_filter_aws {
     flb_sds_t hostname;
     size_t hostname_len;
     int hostname_include;
+
+    /*
+    * Enable entity prefix appending. This appends
+    * 'aws_entity' to relevant keys
+    */
+    int enable_entity;
 
     /* number of new keys added by this plugin */
     int new_keys;

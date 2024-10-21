@@ -34,6 +34,8 @@ static inline void flb_hash_entry_free(struct flb_hash *ht,
     flb_free(entry->key);
     if (entry->val && entry->val_size > 0) {
         flb_free(entry->val);
+    } else if (ht->force_remove_pointer) {
+        flb_free(entry->val);
     }
     flb_free(entry);
 }
@@ -60,6 +62,7 @@ struct flb_hash *flb_hash_create(int evict_mode, size_t size, int max_entries)
     ht->size = size;
     ht->total_count = 0;
     ht->cache_ttl = 0;
+    ht->force_remove_pointer = 0;
     ht->table = flb_calloc(1, sizeof(struct flb_hash_table) * size);
     if (!ht->table) {
         flb_errno();
@@ -90,6 +93,21 @@ struct flb_hash *flb_hash_create_with_ttl(int cache_ttl, int evict_mode,
 
     ht->cache_ttl = cache_ttl;
 
+    return ht;
+}
+
+struct flb_hash *flb_hash_create_with_ttl_force_destroy(int cache_ttl, int evict_mode,
+                                          size_t size, int max_entries)
+{
+    struct flb_hash *ht;
+
+    ht = flb_hash_create_with_ttl(cache_ttl,evict_mode, size, max_entries);
+    if (!ht) {
+        flb_errno();
+        return NULL;
+    }
+
+    ht->force_remove_pointer = 1;
     return ht;
 }
 
