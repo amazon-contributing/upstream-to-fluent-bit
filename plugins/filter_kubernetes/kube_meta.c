@@ -348,7 +348,8 @@ static int get_meta_file_info(struct flb_kube *ctx, const char *namespace,
 static int get_meta_info_from_request(struct flb_kube *ctx,
                                       struct flb_upstream *upstream,
                                       const char *namespace,
-                                      const char *resource,
+                                      const char *resource_type,
+                                      const char *resource_name,
                                       char **buffer, size_t *size,
                                       int *root_type,
                                       char* uri)
@@ -389,9 +390,9 @@ static int get_meta_info_from_request(struct flb_kube *ctx,
     }
 
     ret = flb_http_do(c, &b_sent);
-    flb_plg_debug(ctx->ins, "Request (ns=%s, resource=%s) http_do=%i, "
+    flb_plg_debug(ctx->ins, "Request (ns=%s, %s=%s) http_do=%i, "
                   "HTTP Status: %i",
-                  namespace, resource, ret, c->resp.status);
+                  namespace, resource_type, resource_name, ret, c->resp.status);
 
     if (ret != 0 || c->resp.status != 200) {
         if (c->resp.payload_size > 0) {
@@ -441,7 +442,7 @@ static int get_pods_from_kubelet(struct flb_kube *ctx,
         }
         flb_plg_debug(ctx->ins,
                       "Send out request to Kubelet for pods information.");
-        packed = get_meta_info_from_request(ctx, ctx->upstream, namespace, podname,
+        packed = get_meta_info_from_request(ctx, ctx->upstream, namespace, FLB_KUBE_POD, podname,
                                             &buf, &size, &root_type, uri);
     }
 
@@ -482,10 +483,10 @@ static int get_api_server_configmap(struct flb_kube *ctx,
         flb_plg_debug(ctx->ins,
                       "Send out request to API Server for configmap information");
         if(ctx->use_kubelet) {
-            packed = get_meta_info_from_request(ctx,ctx->kubernetes_upstream, namespace, configmap,
+            packed = get_meta_info_from_request(ctx,ctx->kubernetes_upstream, namespace,FLB_KUBE_CONFIGMAP, configmap,
                                     &buf, &size, &root_type, uri);
         } else {
-            packed = get_meta_info_from_request(ctx,ctx->upstream, namespace, configmap,
+            packed = get_meta_info_from_request(ctx,ctx->upstream, namespace, FLB_KUBE_CONFIGMAP, configmap,
                                     &buf, &size, &root_type, uri);
         }
     }
@@ -530,7 +531,7 @@ static int get_api_server_info(struct flb_kube *ctx,
         }
         flb_plg_debug(ctx->ins,
                       "Send out request to API Server for pods information");
-        packed = get_meta_info_from_request(ctx, ctx->upstream, namespace, podname,
+        packed = get_meta_info_from_request(ctx, ctx->upstream, namespace,FLB_KUBE_POD, podname,
                                             &buf, &size, &root_type, uri);
     }
 
@@ -785,7 +786,9 @@ static void cb_results_workload(const char *name, const char *value,
 
 /*
  * Search workload based on the following priority
- * where the top is highest priority
+ * where the top is highest priority. This is done
+ * to find the owner of the pod which helps with
+ * determining the upper-level management of the pod
  * 1. Deployment name
  * 2. StatefulSet name
  * 3. DaemonSet name
@@ -1116,6 +1119,7 @@ static int merge_meta(struct flb_kube_meta *meta, struct flb_kube *ctx,
     msgpack_object ann_map;
     struct flb_kube_props props = {0};
     struct service_attributes *tmp_service_attributes = {0};
+
     /*
      * - reg_buf: is a msgpack Map containing meta captured using Regex
      *
@@ -1937,7 +1941,8 @@ int flb_kube_meta_get(struct flb_kube *ctx,
     return 0;
 }
 
-int flb_kube_meta_release(struct flb_kube_meta *meta) {
+int flb_kube_meta_release(struct flb_kube_meta *meta)
+{
     int r = 0;
 
     if (meta->namespace) {

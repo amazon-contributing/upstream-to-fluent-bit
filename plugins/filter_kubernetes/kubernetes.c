@@ -461,6 +461,7 @@ static int cb_kube_init(struct flb_filter_instance *f_ins,
         // Start the background thread
         if (pthread_create(&background_thread, NULL, update_pod_service_map, NULL) != 0) {
             flb_error("Failed to create background thread");
+            background_thread = NULL;
             free(task_args);
         }
     }
@@ -1167,7 +1168,7 @@ static struct flb_config_map config_map[] = {
     FLB_CONFIG_MAP_BOOL, "use_pod_association", "false",
     0, FLB_TRUE, offsetof(struct flb_kube, use_pod_association),
     "use custom endpoint to get pod to service name mapping"
-   },
+    },
    /*
     * The host used for pod to service name association , default is 127.0.0.1
     * Will only check when "use_pod_association" config is set to true
@@ -1185,7 +1186,7 @@ static struct flb_config_map config_map[] = {
         FLB_CONFIG_MAP_STR, "pod_association_endpoint", "/kubernetes/pod-to-service-env-map",
         0, FLB_TRUE, offsetof(struct flb_kube, pod_association_endpoint),
         "endpoint to connect with when performing pod to service name association"
-     },
+    },
       /*
        * The port for pod to service name association endpoint, default is 4311
        * Will only check when "use_pod_association" config is set to true
@@ -1241,13 +1242,13 @@ static struct flb_config_map config_map[] = {
     FLB_CONFIG_MAP_BOOL, "pod_association_host_tls_verify", "true",
     0, FLB_TRUE, offsetof(struct flb_kube, pod_association_host_tls_verify),
     "enable or disable verification of TLS peer certificate"
-   },
+    },
     {
     FLB_CONFIG_MAP_STR, "set_platform", NULL,
     0, FLB_TRUE, offsetof(struct flb_kube, set_platform),
     "Set the platform that kubernetes is in. Possible values are k8s and eks"
         "This should only be used for testing purpose"
-   },
+    },
     /* EOF */
     {0}
 };

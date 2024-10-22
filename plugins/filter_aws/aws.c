@@ -751,7 +751,8 @@ static struct flb_config_map config_map[] = {
     {
     FLB_CONFIG_MAP_BOOL, "enable_entity", "false",
     0, FLB_TRUE, offsetof(struct flb_filter_aws, enable_entity),
-    "Enable entity prefix for necessary fields"
+    "Enable entity prefix for fields used for constructing entity."
+    "This currently only affects instance ID"
     },
     {0}
 };
