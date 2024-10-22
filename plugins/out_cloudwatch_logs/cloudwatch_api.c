@@ -1169,6 +1169,12 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
     msgpack_object emf_payload;
     /* msgpack::sbuffer is a simple buffer implementation. */
     msgpack_sbuffer mp_sbuf;
+    /*
+     * Msgpack objects used to store msgpack after filtering out fields
+     * with aws entity prefix
+     */
+    msgpack_sbuffer filtered_sbuf;
+    msgpack_unpacked modified_unpacked;
 
     struct log_stream *stream;
 
@@ -1216,6 +1222,10 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
         map = root.via.array.ptr[1];
         map_size = map.via.map.size;
 
+        if(ctx->kubernete_metadata_enabled && ctx->add_entity) {
+            msgpack_sbuffer_init(&filtered_sbuf);
+            msgpack_unpacked_init(&modified_unpacked);
+        }
         stream = get_log_stream(ctx, tag, map);
         if (!stream) {
             flb_plg_debug(ctx->ins, "Couldn't determine log group & stream for record with tag %s", tag);
@@ -1225,21 +1235,15 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
             update_or_create_entity(ctx,stream,map);
             // Prepare a buffer to pack the modified map
             if(stream->entity != NULL && (stream->entity->root_filter_count > 0 || stream->entity->filter_count > 0)) {
-                msgpack_sbuffer sbuf;
-                msgpack_sbuffer_init(&sbuf);
                 msgpack_packer pk;
-                msgpack_packer_init(&pk, &sbuf, msgpack_sbuffer_write);
+                msgpack_packer_init(&pk, &filtered_sbuf, msgpack_sbuffer_write);
                 remove_unneeded_field(&map, "kubernetes",&pk,stream->entity->root_filter_count, stream->entity->filter_count);
 
                 // Now, unpack the modified data into a new msgpack_object
-                msgpack_unpacked modified_unpacked;
-                msgpack_unpacked_init(&modified_unpacked);
                 size_t modified_offset = 0;
-                if (msgpack_unpack_next(&modified_unpacked, sbuf.data, sbuf.size, &modified_offset)) {
+                if (msgpack_unpack_next(&modified_unpacked, filtered_sbuf.data, filtered_sbuf.size, &modified_offset)) {
                     map = modified_unpacked.data;
                 }
-                msgpack_sbuffer_destroy(&sbuf);
-                msgpack_unpacked_destroy(&modified_unpacked);
             }
         }
 
@@ -1360,6 +1364,10 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
         if (ret == 0) {
             i++;
         }
+        if(ctx->kubernete_metadata_enabled && ctx->add_entity) {
+            msgpack_sbuffer_destroy(&filtered_sbuf);
+            msgpack_unpacked_destroy(&modified_unpacked);
+        }
     }
     msgpack_unpacked_destroy(&result);
 
@@ -1375,6 +1383,10 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
 
 error:
     msgpack_unpacked_destroy(&result);
+    if(ctx->kubernete_metadata_enabled && ctx->add_entity) {
+        msgpack_sbuffer_destroy(&filtered_sbuf);
+        msgpack_unpacked_destroy(&modified_unpacked);
+    }
     return -1;
 }
 
