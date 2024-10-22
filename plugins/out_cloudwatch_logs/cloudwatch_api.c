@@ -360,7 +360,7 @@ static int init_put_payload(struct flb_cloudwatch *ctx, struct cw_flush *buf,
     }
     // If we are missing the service name, the entity will get rejected by the frontend anyway
     // so do not emit entity unless service name is filled
-    if(ctx->add_entity && stream->entity != NULL && stream->entity->key_attributes->name != NULL) {
+    if(ctx->add_entity && stream->entity != NULL && stream->entity->key_attributes != NULL && stream->entity->key_attributes->name != NULL) {
         if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
                       "\"entity\":{", 10)) {
             goto error;
@@ -523,7 +523,10 @@ static int truncate_log(const struct flb_cloudwatch *ctx, const char *log_buffer
     return FLB_FALSE;
 }
 
-// Helper function to remove keys from a nested map
+/*
+ * Helper function to remove keys prefixed with aws_entity
+ * from a message pack map
+ */
 void remove_key_from_nested_map(msgpack_object_map *nested_map, msgpack_packer *pk, int filtered_fields) {
     const int remaining_kv_pairs = nested_map->size - filtered_fields;
 
@@ -545,7 +548,10 @@ void remove_key_from_nested_map(msgpack_object_map *nested_map, msgpack_packer *
     }
 }
 
-// Main function to remove a key from a nested map inside the root map
+/*
+ * Main function to remove keys prefixed with aws_entity
+ * from the root and nested message pack map
+ */
 void remove_unneeded_field(msgpack_object *root_map, const char *nested_map_key, msgpack_packer *pk,int root_filtered_fields, int filtered_fields) {
     if (root_map->type == MSGPACK_OBJECT_MAP) {
         msgpack_object_map root = root_map->via.map;
@@ -1034,16 +1040,20 @@ void parse_entity(struct flb_cloudwatch *ctx, entity *entity, msgpack_object map
                     kube_key = val.via.map.ptr[j].key;
                     kube_val = val.via.map.ptr[j].val;
                     if(strncmp(kube_key.via.str.ptr, "aws_entity_service_name", kube_key.via.str.size) == 0) {
-                        if(entity->key_attributes->name == NULL) {
+                        if(!entity->service_name_found) {
                             entity->filter_count++;
-                        } else {
+                            entity->service_name_found++;
+                        }
+                        if(entity->key_attributes->name != NULL) {
                             flb_free(entity->key_attributes->name);
                         }
                         entity->key_attributes->name = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
                     } else if(strncmp(kube_key.via.str.ptr, "aws_entity_environment", kube_key.via.str.size) == 0) {
-                        if(entity->key_attributes->environment == NULL) {
+                        if(!entity->environment_found) {
                             entity->filter_count++;
-                        } else {
+                            entity->environment_found++;
+                        }
+                        if(entity->key_attributes->environment != NULL) {
                             flb_free(entity->key_attributes->environment);
                         }
                         entity->key_attributes->environment = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
@@ -1072,9 +1082,11 @@ void parse_entity(struct flb_cloudwatch *ctx, entity *entity, msgpack_object map
                         }
                         entity->attributes->workload = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
                     } else if(strncmp(kube_key.via.str.ptr, "aws_entity_name_source", kube_key.via.str.size) == 0) {
-                        if(entity->attributes->name_source == NULL) {
+                        if(!entity->name_source_found) {
                             entity->filter_count++;
-                        } else {
+                            entity->name_source_found++;
+                        }
+                        if(entity->attributes->name_source != NULL) {
                             flb_free(entity->attributes->name_source);
                         }
                         entity->attributes->name_source = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
@@ -1128,11 +1140,11 @@ void update_or_create_entity(struct flb_cloudwatch *ctx, struct log_stream *stre
             memset(stream->entity->attributes, 0, sizeof(entity_attributes));
             stream->entity->filter_count = 0;
             stream->entity->root_filter_count = 0;
-
-            parse_entity(ctx,stream->entity,map, map.via.map.size);
-        } else {
-            parse_entity(ctx,stream->entity,map, map.via.map.size);
+            stream->entity->service_name_found = 0;
+            stream->entity->environment_found = 0;
+            stream->entity->name_source_found = 0;
         }
+        parse_entity(ctx,stream->entity,map, map.via.map.size);
         if (!stream->entity) {
             flb_plg_warn(ctx->ins, "Failed to generate entity");
         }
@@ -1160,6 +1172,12 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
     msgpack_object emf_payload;
     /* msgpack::sbuffer is a simple buffer implementation. */
     msgpack_sbuffer mp_sbuf;
+    /*
+     * Msgpack objects used to store msgpack after filtering out fields
+     * with aws entity prefix
+     */
+    msgpack_sbuffer filtered_sbuf;
+    msgpack_unpacked modified_unpacked;
 
     struct log_stream *stream;
 
@@ -1207,6 +1225,10 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
         map = root.via.array.ptr[1];
         map_size = map.via.map.size;
 
+        if(ctx->kubernete_metadata_enabled && ctx->add_entity) {
+            msgpack_sbuffer_init(&filtered_sbuf);
+            msgpack_unpacked_init(&modified_unpacked);
+        }
         stream = get_log_stream(ctx, tag, map);
         if (!stream) {
             flb_plg_debug(ctx->ins, "Couldn't determine log group & stream for record with tag %s", tag);
@@ -1216,21 +1238,15 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
             update_or_create_entity(ctx,stream,map);
             // Prepare a buffer to pack the modified map
             if(stream->entity != NULL && (stream->entity->root_filter_count > 0 || stream->entity->filter_count > 0)) {
-                msgpack_sbuffer sbuf;
-                msgpack_sbuffer_init(&sbuf);
                 msgpack_packer pk;
-                msgpack_packer_init(&pk, &sbuf, msgpack_sbuffer_write);
+                msgpack_packer_init(&pk, &filtered_sbuf, msgpack_sbuffer_write);
                 remove_unneeded_field(&map, "kubernetes",&pk,stream->entity->root_filter_count, stream->entity->filter_count);
 
                 // Now, unpack the modified data into a new msgpack_object
-                msgpack_unpacked modified_unpacked;
-                msgpack_unpacked_init(&modified_unpacked);
                 size_t modified_offset = 0;
-                if (msgpack_unpack_next(&modified_unpacked, sbuf.data, sbuf.size, &modified_offset)) {
+                if (msgpack_unpack_next(&modified_unpacked, filtered_sbuf.data, filtered_sbuf.size, &modified_offset)) {
                     map = modified_unpacked.data;
                 }
-                msgpack_sbuffer_destroy(&sbuf);
-                msgpack_unpacked_destroy(&modified_unpacked);
             }
         }
 
@@ -1351,6 +1367,10 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
         if (ret == 0) {
             i++;
         }
+        if(ctx->kubernete_metadata_enabled && ctx->add_entity) {
+            msgpack_sbuffer_destroy(&filtered_sbuf);
+            msgpack_unpacked_destroy(&modified_unpacked);
+        }
     }
     msgpack_unpacked_destroy(&result);
 
@@ -1366,6 +1386,10 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
 
 error:
     msgpack_unpacked_destroy(&result);
+    if(ctx->kubernete_metadata_enabled && ctx->add_entity) {
+        msgpack_sbuffer_destroy(&filtered_sbuf);
+        msgpack_unpacked_destroy(&modified_unpacked);
+    }
     return -1;
 }
 

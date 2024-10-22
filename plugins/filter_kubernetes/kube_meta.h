@@ -60,6 +60,10 @@ struct flb_kube_meta {
 #define FLB_KUBE_API_CONFIGMAP_FMT "/api/v1/namespaces/%s/configmaps/%s"
 #define FLB_KUBELET_PODS "/pods"
 
+/* Constants for possible kubernetes resources */
+#define FLB_KUBE_POD "pod"
+#define FLB_KUBE_CONFIGMAP "configmap"
+
 int flb_kube_meta_init(struct flb_kube *ctx, struct flb_config *config);
 int flb_kube_meta_fetch(struct flb_kube *ctx);
 int flb_kube_dummy_meta_get(char **out_buf, size_t *out_size);
