@@ -558,11 +558,19 @@ static int cb_aws_filter(const void *data, size_t bytes,
                                   ctx->availability_zone_len);
         }
 
-        if (ctx->instance_id_include) {
+        if (ctx->instance_id_include && !ctx->enable_entity) {
             msgpack_pack_str(&tmp_pck, FLB_FILTER_AWS_INSTANCE_ID_KEY_LEN);
             msgpack_pack_str_body(&tmp_pck,
                                   FLB_FILTER_AWS_INSTANCE_ID_KEY,
                                   FLB_FILTER_AWS_INSTANCE_ID_KEY_LEN);
+            msgpack_pack_str(&tmp_pck, ctx->instance_id_len);
+            msgpack_pack_str_body(&tmp_pck,
+                                  ctx->instance_id, ctx->instance_id_len);
+        } else if (ctx->instance_id_include && ctx->enable_entity) {
+            msgpack_pack_str(&tmp_pck, FLB_FILTER_AWS_ENTITY_INSTANCE_ID_KEY_LEN);
+            msgpack_pack_str_body(&tmp_pck,
+                                  FLB_FILTER_AWS_ENTITY_INSTANCE_ID_KEY,
+                                  FLB_FILTER_AWS_ENTITY_INSTANCE_ID_KEY_LEN);
             msgpack_pack_str(&tmp_pck, ctx->instance_id_len);
             msgpack_pack_str_body(&tmp_pck,
                                   ctx->instance_id, ctx->instance_id_len);
@@ -739,6 +747,12 @@ static struct flb_config_map config_map[] = {
      FLB_CONFIG_MAP_BOOL, "hostname", "false",
      0, FLB_TRUE, offsetof(struct flb_filter_aws, hostname_include),
      "Enable EC2 instance hostname"
+    },
+    {
+    FLB_CONFIG_MAP_BOOL, "enable_entity", "false",
+    0, FLB_TRUE, offsetof(struct flb_filter_aws, enable_entity),
+    "Enable entity prefix for fields used for constructing entity."
+    "This currently only affects instance ID"
     },
     {0}
 };

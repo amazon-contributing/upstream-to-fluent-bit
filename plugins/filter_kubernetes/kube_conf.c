@@ -99,6 +99,12 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
             ctx->api_https = FLB_FALSE;
         }
 
+        if (ctx->use_pod_association) {
+            ctx->kubernetes_api_host = flb_strdup(FLB_API_HOST);
+            ctx->kubernetes_api_port = FLB_API_PORT;
+        }
+
+
     }
     else if (!url) {
         ctx->api_host = flb_strdup(FLB_API_HOST);
@@ -190,6 +196,12 @@ struct flb_kube *flb_kube_conf_create(struct flb_filter_instance *ins,
         flb_plg_info(ctx->ins, "https=%i host=%s port=%i",
                      ctx->api_https, ctx->api_host, ctx->api_port);
     }
+
+
+    ctx->pod_hash_table = flb_hash_create_with_ttl_force_destroy(ctx->pod_service_map_ttl,
+                                       FLB_HASH_EVICT_OLDER,
+                                       FLB_HASH_TABLE_SIZE,
+                                       FLB_HASH_TABLE_SIZE);
     return ctx;
 }
 
@@ -203,6 +215,10 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
         flb_hash_destroy(ctx->hash_table);
     }
 
+    if (ctx->pod_hash_table) {
+        flb_hash_destroy(ctx->pod_hash_table);
+    }
+
     if (ctx->merge_log == FLB_TRUE) {
         flb_free(ctx->unesc_buf);
     }
@@ -210,6 +226,9 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
     /* Destroy regex content only if a parser was not defined */
     if (ctx->parser == NULL && ctx->regex) {
         flb_regex_destroy(ctx->regex);
+    }
+    if (ctx->deploymentRegex) {
+        flb_regex_destroy(ctx->deploymentRegex);
     }
 
     flb_free(ctx->api_host);
@@ -220,6 +239,24 @@ void flb_kube_conf_destroy(struct flb_kube *ctx)
 
     if (ctx->upstream) {
         flb_upstream_destroy(ctx->upstream);
+    }
+
+    if(ctx->pod_association_tls) {
+        flb_tls_destroy(ctx->pod_association_tls);
+    }
+
+    if (ctx->pod_association_upstream) {
+        flb_upstream_destroy(ctx->pod_association_upstream);
+    }
+
+    if (ctx->kubernetes_upstream) {
+        flb_upstream_destroy(ctx->kubernetes_upstream);
+    }
+    if (ctx->kubernetes_api_host) {
+        flb_free(ctx->kubernetes_api_host);
+    }
+    if (ctx->platform) {
+        flb_free(ctx->platform);
     }
 
 #ifdef FLB_HAVE_TLS
