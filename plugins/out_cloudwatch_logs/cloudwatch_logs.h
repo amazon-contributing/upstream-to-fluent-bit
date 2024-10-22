@@ -36,6 +36,9 @@ typedef struct entity {
     struct entity_key_attributes *key_attributes;
     struct entity_attributes *attributes;
     int filter_count;
+    int service_name_found;
+    int environment_found;
+    int name_source_found;
     int root_filter_count;
 }entity;
 

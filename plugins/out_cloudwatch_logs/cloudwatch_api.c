@@ -1034,16 +1034,20 @@ void parse_entity(struct flb_cloudwatch *ctx, entity *entity, msgpack_object map
                     kube_key = val.via.map.ptr[j].key;
                     kube_val = val.via.map.ptr[j].val;
                     if(strncmp(kube_key.via.str.ptr, "aws_entity_service_name", kube_key.via.str.size) == 0) {
-                        if(entity->key_attributes->name == NULL) {
+                        if(!entity->service_name_found) {
                             entity->filter_count++;
-                        } else {
+                            entity->service_name_found++;
+                        }
+                        if(entity->key_attributes->name != NULL) {
                             flb_free(entity->key_attributes->name);
                         }
                         entity->key_attributes->name = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
                     } else if(strncmp(kube_key.via.str.ptr, "aws_entity_environment", kube_key.via.str.size) == 0) {
-                        if(entity->key_attributes->environment == NULL) {
+                        if(!entity->environment_found) {
                             entity->filter_count++;
-                        } else {
+                            entity->environment_found++;
+                        }
+                        if(entity->key_attributes->environment != NULL) {
                             flb_free(entity->key_attributes->environment);
                         }
                         entity->key_attributes->environment = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
@@ -1072,9 +1076,11 @@ void parse_entity(struct flb_cloudwatch *ctx, entity *entity, msgpack_object map
                         }
                         entity->attributes->workload = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
                     } else if(strncmp(kube_key.via.str.ptr, "aws_entity_name_source", kube_key.via.str.size) == 0) {
-                        if(entity->attributes->name_source == NULL) {
+                        if(!entity->name_source_found) {
                             entity->filter_count++;
-                        } else {
+                            entity->name_source_found++;
+                        }
+                        if(entity->attributes->name_source != NULL) {
                             flb_free(entity->attributes->name_source);
                         }
                         entity->attributes->name_source = flb_strndup(kube_val.via.str.ptr, kube_val.via.str.size);
@@ -1128,6 +1134,9 @@ void update_or_create_entity(struct flb_cloudwatch *ctx, struct log_stream *stre
             memset(stream->entity->attributes, 0, sizeof(entity_attributes));
             stream->entity->filter_count = 0;
             stream->entity->root_filter_count = 0;
+            stream->entity->service_name_found = 0;
+            stream->entity->environment_found = 0;
+            stream->entity->name_source_found = 0;
 
             parse_entity(ctx,stream->entity,map, map.via.map.size);
         } else {
