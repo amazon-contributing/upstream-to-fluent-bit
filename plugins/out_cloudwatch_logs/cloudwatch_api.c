@@ -368,7 +368,7 @@ static int init_put_payload(struct flb_cloudwatch *ctx, struct cw_flush *buf,
     }
     // If we are missing the service name, the entity will get rejected by the frontend anyway
     // so do not emit entity unless service name is filled
-    if(ctx->add_entity && stream->entity != NULL && stream->entity->key_attributes != NULL && stream->entity->key_attributes->name != NULL) {
+    if(ctx->add_entity && stream->entity != NULL && stream->entity->key_attributes != NULL && stream->entity->key_attributes->name != NULL && stream->entity->key_attributes->account_id != NULL) {
         if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
                       "\"entity\":{", 10)) {
             goto error;
