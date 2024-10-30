@@ -616,11 +616,19 @@ static int cb_aws_filter(const void *data, size_t bytes,
                                   ctx->ami_id, ctx->ami_id_len);
         }
 
-        if (ctx->account_id_include) {
+        if (ctx->account_id_include && !ctx->enable_entity) {
             msgpack_pack_str(&tmp_pck, FLB_FILTER_AWS_ACCOUNT_ID_KEY_LEN);
             msgpack_pack_str_body(&tmp_pck,
                                   FLB_FILTER_AWS_ACCOUNT_ID_KEY,
                                   FLB_FILTER_AWS_ACCOUNT_ID_KEY_LEN);
+            msgpack_pack_str(&tmp_pck, ctx->account_id_len);
+            msgpack_pack_str_body(&tmp_pck,
+                                  ctx->account_id, ctx->account_id_len);
+        } else if (ctx->account_id_include && ctx->enable_entity) {
+            msgpack_pack_str(&tmp_pck, FLB_FILTER_AWS_ENTITY_ACCOUNT_ID_KEY_LEN);
+            msgpack_pack_str_body(&tmp_pck,
+                                  FLB_FILTER_AWS_ENTITY_ACCOUNT_ID_KEY,
+                                  FLB_FILTER_AWS_ENTITY_ACCOUNT_ID_KEY_LEN);
             msgpack_pack_str(&tmp_pck, ctx->account_id_len);
             msgpack_pack_str_body(&tmp_pck,
                                   ctx->account_id, ctx->account_id_len);

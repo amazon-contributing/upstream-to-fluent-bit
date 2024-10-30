@@ -221,6 +221,14 @@ static int entity_add_key_attributes(struct flb_cloudwatch *ctx, struct cw_flush
             goto error;
         }
     }
+    if(stream->entity->key_attributes->account_id != NULL && strlen(stream->entity->key_attributes->account_id) != 0) {
+        if (!snprintf(ts,KEY_ATTRIBUTES_MAX_LEN, ",%s%s%s","\"AwsAccountId\":\"",stream->entity->key_attributes->account_id,"\"")) {
+            goto error;
+        }
+        if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
+            goto error;
+        }
+    }
     if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
               "},", 2)) {
         goto error;
@@ -1108,6 +1116,14 @@ void parse_entity(struct flb_cloudwatch *ctx, entity *entity, msgpack_object map
                 flb_free(entity->attributes->instance_id);
             }
             entity->attributes->instance_id = flb_strndup(val.via.str.ptr, val.via.str.size);
+        }
+        if(strncmp(key.via.str.ptr, "aws_entity_account_id",key.via.str.size ) == 0 ) {
+            if(entity->key_attributes->account_id == NULL) {
+                entity->root_filter_count++;
+            } else {
+                flb_free(entity->key_attributes->account_id);
+            }
+            entity->key_attributes->account_id = flb_strndup(val.via.str.ptr, val.via.str.size);
         }
     }
     if(entity->key_attributes->name == NULL && entity->attributes->name_source == NULL &&entity->attributes->workload != NULL) {
