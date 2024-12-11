@@ -312,9 +312,8 @@ struct flb_aws_provider *flb_endpoint_provider_create(struct flb_config *config,
 }
 
 /*
- * ECS Provider
- * The ECS Provider is just a wrapper around the HTTP Provider
- * with the ECS credentials endpoint.
+ * HTTP Provider for ECS and EKS container credentials
+ * This creates a HTTP Provider that queries the ECS or EKS credentials endpoint.
  */
 
 struct flb_aws_provider *flb_http_provider_create(struct flb_config *config,
