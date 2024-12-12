@@ -463,6 +463,10 @@ static int http_credentials_request(struct flb_aws_provider_http
     if (!c || c->resp.status != 200) {
         flb_debug("[aws_credentials] http credentials request failed");
         if (c) {
+            if (c->resp.payload_size > 0) {
+                flb_aws_print_error_code(c->resp.payload, c->resp.payload_size,
+                                         "ContainerCredentialsLocalServer");
+            }
             flb_http_client_destroy(c);
         }
         if (auth_token) {
