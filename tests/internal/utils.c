@@ -559,6 +559,7 @@ void test_proxy_url_split() {
 TEST_LIST = {
     /* JSON maps iteration */
     { "url_split", test_url_split },
+    { "url_split_sds", test_url_split_sds },
     { "write_str", test_write_str },
     { "test_write_str_invalid_trailing_bytes", test_write_str_invalid_trailing_bytes },
     { "test_write_str_invalid_leading_byte", test_write_str_invalid_leading_byte },
