@@ -67,20 +67,20 @@
 #define FLB_FILTER_AWS_ENTITY_ACCOUNT_ID_KEY_LEN          21
 #define FLB_FILTER_AWS_HOSTNAME_KEY                       "hostname"
 #define FLB_FILTER_AWS_HOSTNAME_KEY_LEN                   8
-#define FLB_FILTER_AWS_ENTITY_PLATFORM_KEY             "aws_entity_platform"
-#define FLB_FILTER_AWS_ENTITY_PLATFORM_KEY_LEN         19
-#define FLB_FILTER_AWS_ENTITY_CLUSTER_KEY             "aws_entity_cluster"
-#define FLB_FILTER_AWS_ENTITY_CLUSTER_KEY_LEN         18
-#define FLB_FILTER_AWS_ENTITY_TYPE_KEY             "aws_entity_type"
-#define FLB_FILTER_AWS_ENTITY_TYPE_KEY_LEN         15
+#define FLB_FILTER_AWS_ENTITY_PLATFORM_KEY                "aws_entity_platform"
+#define FLB_FILTER_AWS_ENTITY_PLATFORM_KEY_LEN            19
+#define FLB_FILTER_AWS_ENTITY_CLUSTER_KEY                 "aws_entity_cluster"
+#define FLB_FILTER_AWS_ENTITY_CLUSTER_KEY_LEN             18
+#define FLB_FILTER_AWS_ENTITY_TYPE_KEY                    "aws_entity_type"
+#define FLB_FILTER_AWS_ENTITY_TYPE_KEY_LEN                15
 
 /*
  * Possible entity type values for aws plugin
  */
 #define FLB_FILTER_ENTITY_TYPE_RESOURCE                   "resource"
-#define FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN                8
-#define FLB_FILTER_ENTITY_TYPE_SERVICE                "service"
-#define FLB_FILTER_ENTITY_TYPE_SERVICE_LEN              7
+#define FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN               8
+#define FLB_FILTER_ENTITY_TYPE_SERVICE                    "service"
+#define FLB_FILTER_ENTITY_TYPE_SERVICE_LEN                7
 /*
  * Possible platform values for aws plugin
  */
@@ -98,6 +98,10 @@
 #define FLB_API_HOST  "kubernetes.default.svc"
 #define FLB_API_PORT  443
 #define FLB_API_TLS   FLB_TRUE
+
+#define FLB_KUBE_TOKEN "/var/run/secrets/kubernetes.io/serviceaccount/token"
+#define FLB_KUBE_CONFIGMAP "configmap"
+#define FLB_KUBE_API_CONFIGMAP_FMT "/api/v1/namespaces/%s/configmaps/%s"
 
 struct flb_filter_aws {
     /* upstream connection to ec2 IMDS */
@@ -157,7 +161,6 @@ struct flb_filter_aws {
     * Possible values resource or service
     */
     flb_sds_t entity_type;
-    si
 
     char *cluster;
     int cluster_len;
@@ -183,6 +186,22 @@ struct flb_filter_aws {
 
     /* Filter plugin instance reference */
     struct flb_filter_instance *ins;
+
+    /* HTTP Client Setup */
+    size_t buffer_size;
+
+    /* Pre-formatted HTTP Authorization header value */
+    char *auth;
+    size_t auth_len;
+
+    /* Command to get Kubernetes Authorization Token */
+    const char *kube_token_command; 
+    int kube_token_create;
+    int kube_token_ttl;
+
+    /* Kubernetes Token from FLB_KUBE_TOKEN file */
+    char *token;
+    size_t token_len;
 };
 
 #endif

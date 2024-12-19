@@ -34,6 +34,7 @@
 
 #include <monkey/mk_core/mk_list.h>
 #include <msgpack.h>
+#include <sys/stat.h>
 #include <stdlib.h>
 #include <errno.h>
 
@@ -185,9 +186,10 @@ static int cb_aws_init(struct flb_filter_instance *f_ins,
                                     FLB_API_PORT,
                                     FLB_IO_TLS,
                                     NULL);
+        flb_plg_info(ctx->ins, "kubernetes upstream connection created in aws plugin");
     }
     if (!ctx->kubernetes_upstream) {
-        flb_plg_debug(ctx->ins, "kubernetes upstream connection initialization error in aws plugin");
+        flb_plg_info(ctx->ins, "kubernetes upstream connection initialization error in aws plugin");
     }
     flb_filter_set_context(f_ins, ctx);
     return 0;
@@ -391,8 +393,119 @@ static void get_cluster_from_environment(struct flb_filter_aws *ctx)
         } else {
             free(cluster_name);
         }
-        flb_plg_debug(ctx->ins, "Cluster name is %s.", ctx->cluster);
+        flb_plg_info(ctx->ins, "Cluster name is %s.", ctx->cluster);
     }
+}
+
+static int file_to_buffer(const char *path,
+                          char **out_buf, size_t *out_size)
+{
+    int ret;
+    char *buf;
+    ssize_t bytes;
+    FILE *fp;
+    struct stat st;
+
+    if (!(fp = fopen(path, "r"))) {
+        return -1;
+    }
+
+    ret = stat(path, &st);
+    if (ret == -1) {
+        flb_errno();
+        fclose(fp);
+        return -1;
+    }
+
+    buf = flb_calloc(1, (st.st_size + 1));
+    if (!buf) {
+        flb_errno();
+        fclose(fp);
+        return -1;
+    }
+
+    bytes = fread(buf, st.st_size, 1, fp);
+    if (bytes < 1) {
+        flb_free(buf);
+        fclose(fp);
+        return -1;
+    }
+
+    fclose(fp);
+
+    *out_buf = buf;
+    *out_size = st.st_size;
+
+    return 0;
+}
+
+/* Set K8s Authorization Token and get HTTP Auth Header */
+static int get_http_auth_header(struct flb_filter_aws *ctx) 
+{
+    int ret;
+    char *temp;
+    char *tk = NULL;
+    size_t tk_size = 0;
+
+    ret = file_to_buffer(FLB_KUBE_TOKEN, &tk, &tk_size);
+    if (ret == -1) {
+        flb_plg_warn(ctx->ins, "cannot open %s", FLB_KUBE_TOKEN);
+    }
+    flb_plg_info(ctx->ins, " token updated", FLB_KUBE_TOKEN);
+    ctx->kube_token_create = time(NULL);
+
+    /* Token */
+    if (ctx->token != NULL) {
+        flb_free(ctx->token);
+    }
+    ctx->token = tk;
+    ctx->token_len = tk_size;
+
+    /* HTTP Auth Header */
+    if (ctx->auth == NULL) {
+        ctx->auth = flb_malloc(tk_size + 32);
+    }
+    else if (ctx->auth_len < tk_size + 32) {
+        temp = flb_realloc(ctx->auth, tk_size + 32);
+        if (temp == NULL) {
+            flb_free(ctx->auth);
+            ctx->auth = NULL;
+            return -1;
+        } 
+        ctx->auth = temp;
+    }
+    
+    if (!ctx->auth) {
+        return -1;
+    }
+    ctx->auth_len = snprintf(ctx->auth, tk_size + 32,
+                             "Bearer %s",
+                             tk);
+    
+    return 0;
+}
+
+/* Refresh HTTP Auth Header if K8s Authorization Token is expired */
+static int refresh_token_if_needed(struct flb_filter_aws *ctx)
+{
+    int expired = 0;
+    int ret;
+
+    if (ctx->kube_token_create > 0) {
+        if (time(NULL) > ctx->kube_token_create + ctx->kube_token_ttl) {
+            expired = FLB_TRUE;
+        }
+    }
+
+    if (expired || ctx->kube_token_create == 0) {
+        ret = get_http_auth_header(ctx);
+        if (ret == -1) {
+            flb_plg_warn(ctx->ins, "failed to set http auth header");
+            return -1;
+        }
+    }
+
+    return 0;
 }
 
 /* Gather metadata from HTTP Request,
@@ -407,6 +520,8 @@ static int get_meta_info_from_request(struct flb_filter_aws *ctx,
                                       int *root_type,
                                       char* uri)
 {
+    flb_plg_info(ctx->ins,
+                      "get meta info from request is called");
     struct flb_http_client *c;
     struct flb_upstream_conn *u_conn;
     int ret;
@@ -430,6 +545,9 @@ static int get_meta_info_from_request(struct flb_filter_aws *ctx,
         return -1;
     }
 
+    /* Buffer size for HTTP Client when reading responses from API Server */
+    ctx->buffer_size = 32000;
+
     /* Compose HTTP Client request*/
     c = flb_http_client(u_conn, FLB_HTTP_GET,
                         uri,
@@ -443,7 +561,7 @@ static int get_meta_info_from_request(struct flb_filter_aws *ctx,
     }
 
     ret = flb_http_do(c, &b_sent);
-    flb_plg_debug(ctx->ins, "Request (ns=%s, %s=%s) http_do=%i, "
+    flb_plg_info(ctx->ins, "Request (ns=%s, %s=%s) http_do=%i, "
                   "HTTP Status: %i",
                   namespace, resource_type, resource_name, ret, c->resp.status);
 
@@ -473,6 +591,8 @@ static int get_api_server_configmap(struct flb_filter_aws *ctx,
                                const char *namespace, const char *configmap,
                                char **out_buf, size_t *out_size)
 {
+    flb_plg_info(ctx->ins,
+                      "get API Server for configmap information");
     int ret;
     int packed = -1;
     int root_type;
@@ -491,7 +611,7 @@ static int get_api_server_configmap(struct flb_filter_aws *ctx,
         if (ret == -1) {
             return -1;
         }
-        flb_plg_debug(ctx->ins,
+        flb_plg_info(ctx->ins,
                       "Send out request to API Server for configmap information");
         packed = get_meta_info_from_request(ctx,ctx->kubernetes_upstream, namespace,FLB_KUBE_CONFIGMAP, configmap,
                                     &buf, &size, &root_type, uri);
@@ -511,18 +631,19 @@ static int get_api_server_configmap(struct flb_filter_aws *ctx,
 static void get_platform(struct flb_filter_aws *ctx)
 {
     if (ctx->platform == NULL) {
-      char *config_buf = NULL;
-    size_t config_size;
-    ret = get_api_server_configmap(ctx, KUBE_SYSTEM_NAMESPACE,AWS_AUTH_CONFIG_MAP,
-                               &config_buf, &config_size);
-    if (ret == -1) {
-        ctx->platform = flb_strdup(NATIVE_KUBERNETES_PLATFORM);
-    } else {
-        ctx->platform = flb_strdup(EKS_PLATFORM);
-    }
-    ctx->platform_len = strlen(ctx->platform);
-    ctx->new_keys++;
-    flb_plg_debug(ctx->ins, "Platform type is %s.", ctx->platform);
+        char *config_buf = NULL;
+        size_t config_size;
+        int ret;
+        ret = get_api_server_configmap(ctx, KUBE_SYSTEM_NAMESPACE,AWS_AUTH_CONFIG_MAP,
+                                &config_buf, &config_size);
+        if (ret == -1) {
+            ctx->platform = flb_strdup(NATIVE_KUBERNETES_PLATFORM);
+        } else {
+            ctx->platform = flb_strdup(EKS_PLATFORM);
+        }
+        ctx->platform_len = strlen(ctx->platform);
+        ctx->new_keys++;
+        flb_plg_info(ctx->ins, "Platform type is %s.", ctx->platform);
     }
 }
 
@@ -651,8 +772,9 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
       }
 
       if (strncmp(ctx->entity_type , FLB_FILTER_ENTITY_TYPE_RESOURCE, FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN) == 0) {
-        get_cluster_from_environment(ctx)
-        get_platform(ctx)
+        flb_plg_info(ctx->ins, "getting cluster name and platform in aws plugin");
+        get_cluster_from_environment(ctx);
+        get_platform(ctx);
       }
       // new keys for entity type field which should be added to message pack
       ctx->new_keys++;
@@ -820,6 +942,8 @@ static int cb_aws_filter(const void *data, size_t bytes,
         }
 
         if (ctx->enable_entity && ctx->instance_id != NULL && ctx->account_id != NULL && strncmp(ctx->entity_type , FLB_FILTER_ENTITY_TYPE_SERVICE, FLB_FILTER_ENTITY_TYPE_SERVICE_LEN) == 0) {
+            flb_plg_info(ctx->ins,
+                      "Adding instance id and account id to message pack");
             // Pack instance ID with entity prefix for further processing
             msgpack_pack_str(&tmp_pck, FLB_FILTER_AWS_ENTITY_INSTANCE_ID_KEY_LEN);
             msgpack_pack_str_body(&tmp_pck,
@@ -842,18 +966,20 @@ static int cb_aws_filter(const void *data, size_t bytes,
             msgpack_pack_str_body(&tmp_pck,
                                   FLB_FILTER_AWS_ENTITY_TYPE_KEY,
                                   FLB_FILTER_AWS_ENTITY_TYPE_KEY_LEN);
-            msgpack_pack_str(&tmp_pck, ctx->entity_type);
+            msgpack_pack_str(&tmp_pck, strlen(ctx->entity_type));
             msgpack_pack_str_body(&tmp_pck,
                                   ctx->entity_type, strlen(ctx->entity_type));
         }
 
         if (ctx->enable_entity && ctx->cluster !=NULL && ctx->platform != NULL && strncmp(ctx->entity_type , FLB_FILTER_ENTITY_TYPE_RESOURCE, FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN) == 0 ) {
-          // Pack cluster name with entity prefix for further processing
+            flb_plg_info(ctx->ins,
+                      "Adding cluster name and type to message pack");
+            // Pack cluster name with entity prefix for further processing
             msgpack_pack_str(&tmp_pck, FLB_FILTER_AWS_ENTITY_CLUSTER_KEY_LEN);
             msgpack_pack_str_body(&tmp_pck,
                                   FLB_FILTER_AWS_ENTITY_CLUSTER_KEY,
                                   FLB_FILTER_AWS_ENTITY_CLUSTER_KEY_LEN);
-            msgpack_pack_str(&tmp_pck, ctx->cluster);
+            msgpack_pack_str(&tmp_pck, ctx->cluster_len);
             msgpack_pack_str_body(&tmp_pck,
                                   ctx->cluster, ctx->cluster_len);
            // Pack platform with entity prefix for further processing
@@ -861,7 +987,7 @@ static int cb_aws_filter(const void *data, size_t bytes,
             msgpack_pack_str_body(&tmp_pck,
                                   FLB_FILTER_AWS_ENTITY_PLATFORM_KEY,
                                   FLB_FILTER_AWS_ENTITY_PLATFORM_KEY_LEN);
-            msgpack_pack_str(&tmp_pck, ctx->platform);
+            msgpack_pack_str(&tmp_pck, ctx->platform_len);
             msgpack_pack_str_body(&tmp_pck,
                                   ctx->platform, ctx->platform_len);
             // Pack entity type with entity prefix for further processing
@@ -869,7 +995,7 @@ static int cb_aws_filter(const void *data, size_t bytes,
             msgpack_pack_str_body(&tmp_pck,
                                   FLB_FILTER_AWS_ENTITY_TYPE_KEY,
                                   FLB_FILTER_AWS_ENTITY_TYPE_KEY_LEN);
-            msgpack_pack_str(&tmp_pck, ctx->entity_type);
+            msgpack_pack_str(&tmp_pck, strlen(ctx->entity_type));
             msgpack_pack_str_body(&tmp_pck,
                                   ctx->entity_type, strlen(ctx->entity_type));
         }
@@ -935,6 +1061,10 @@ static void flb_filter_aws_destroy(struct flb_filter_aws *ctx)
 
     if(ctx->platform) {
       flb_sds_destroy(ctx->platform);
+    }
+
+    if(ctx->entity_type){
+        flb_sds_destroy(ctx->entity_type);
     }
     flb_free(ctx);
 }
@@ -1005,10 +1135,15 @@ static struct flb_config_map config_map[] = {
     "This currently only affects instance ID"
     },
     {
-    FLB_CONFIG_MAP_STR, "entity_type", "Service",
+    FLB_CONFIG_MAP_STR, "entity_type", "service",
     0, FLB_TRUE, offsetof(struct flb_filter_aws, entity_type),
     "Defines the type of entity and adds related entity fields"
     "Possible values Service or Resource"
+    },
+    {
+     FLB_CONFIG_MAP_TIME, "kube_token_ttl", "10m",
+     0, FLB_TRUE, offsetof(struct flb_filter_aws, kube_token_ttl),
+     "kubernetes token ttl, until it is reread from the token file. Default: 10m"
     },
     {0}
 };
