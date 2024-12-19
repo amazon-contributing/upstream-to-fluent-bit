@@ -179,6 +179,16 @@ static int cb_aws_init(struct flb_filter_instance *f_ins,
         expose_aws_meta(ctx);
     }
 
+    if (ctx->enable_entity && strncmp(ctx->entity_type, FLB_FILTER_ENTITY_TYPE_RESOURCE, FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN) == 0) {
+       ctx->kubernetes_upstream = flb_upstream_create(config,
+                                    FLB_API_HOST,
+                                    FLB_API_PORT,
+                                    FLB_IO_TLS,
+                                    NULL);
+    }
+    if (!ctx->kubernetes_upstream) {
+        flb_plg_debug(ctx->ins, "kubernetes upstream connection initialization error in aws plugin");
+    }
     flb_filter_set_context(f_ins, ctx);
     return 0;
 }
@@ -370,6 +380,152 @@ static int get_vpc_metadata(struct flb_filter_aws *ctx)
     return ret;
 }
 
+static void get_cluster_from_environment(struct flb_filter_aws *ctx)
+{
+    if(ctx->cluster == NULL) {
+        char* cluster_name = getenv("CLUSTER_NAME");
+        if(cluster_name) {
+            ctx->cluster = strdup(cluster_name);
+            ctx->cluster_len = strlen(cluster_name);
+            ctx->new_keys++;
+        } else {
+            free(cluster_name);
+        }
+        flb_plg_debug(ctx->ins, "Cluster name is %s.", ctx->cluster);
+    }
+}
+
+/* Gather metadata from HTTP Request,
+ * this could send out HTTP Request either to KUBE Server API or Kubelet
+ */
+static int get_meta_info_from_request(struct flb_filter_aws *ctx,
+                                      struct flb_upstream *upstream,
+                                      const char *namespace,
+                                      const char *resource_type,
+                                      const char *resource_name,
+                                      char **buffer, size_t *size,
+                                      int *root_type,
+                                      char* uri)
+{
+    struct flb_http_client *c;
+    struct flb_upstream_conn *u_conn;
+    int ret;
+    size_t b_sent;
+    int packed;
+
+    if (!upstream) {
+        return -1;
+    }
+
+    u_conn = flb_upstream_conn_get(upstream);
+
+    if (!u_conn) {
+        flb_plg_error(ctx->ins, "kubelet upstream connection error");
+        return -1;
+    }
+
+    ret = refresh_token_if_needed(ctx);
+    if (ret == -1) {
+        flb_plg_error(ctx->ins, "failed to refresh token");
+        return -1;
+    }
+
+    /* Compose HTTP Client request*/
+    c = flb_http_client(u_conn, FLB_HTTP_GET,
+                        uri,
+                        NULL, 0, NULL, 0, NULL, 0);
+    flb_http_buffer_size(c, ctx->buffer_size);
+
+    flb_http_add_header(c, "User-Agent", 10, "Fluent-Bit", 10);
+    flb_http_add_header(c, "Connection", 10, "close", 5);
+    if (ctx->auth_len > 0) {
+        flb_http_add_header(c, "Authorization", 13, ctx->auth, ctx->auth_len);
+    }
+
+    ret = flb_http_do(c, &b_sent);
+    flb_plg_debug(ctx->ins, "Request (ns=%s, %s=%s) http_do=%i, "
+                  "HTTP Status: %i",
+                  namespace, resource_type, resource_name, ret, c->resp.status);
+
+    if (ret != 0 || c->resp.status != 200) {
+        if (c->resp.payload_size > 0) {
+            flb_plg_debug(ctx->ins, "HTTP response\n%s",
+                          c->resp.payload);
+        }
+        flb_http_client_destroy(c);
+        flb_upstream_conn_release(u_conn);
+        return -1;
+    }
+
+    packed = flb_pack_json(c->resp.payload, c->resp.payload_size,
+                                   buffer, size, root_type);
+
+    /* release resources */
+    flb_http_client_destroy(c);
+    flb_upstream_conn_release(u_conn);
+
+    return packed;
+
+}
+
+/* Gather metadata from API Server */
+static int get_api_server_configmap(struct flb_filter_aws *ctx,
+                               const char *namespace, const char *configmap,
+                               char **out_buf, size_t *out_size)
+{
+    int ret;
+    int packed = -1;
+    int root_type;
+    char uri[1024];
+    char *buf;
+    size_t size;
+
+    *out_buf = NULL;
+    *out_size = 0;
+
+    if (packed == -1) {
+
+        ret = snprintf(uri, sizeof(uri) - 1, FLB_KUBE_API_CONFIGMAP_FMT, namespace,
+                       configmap);
+
+        if (ret == -1) {
+            return -1;
+        }
+        flb_plg_debug(ctx->ins,
+                      "Send out request to API Server for configmap information");
+        packed = get_meta_info_from_request(ctx,ctx->kubernetes_upstream, namespace,FLB_KUBE_CONFIGMAP, configmap,
+                                    &buf, &size, &root_type, uri);
+    }
+
+    /* validate pack */
+    if (packed == -1) {
+        return -1;
+    }
+
+    *out_buf = buf;
+    *out_size = size;
+
+    return 0;
+}
+
+static void get_platform(struct flb_filter_aws *ctx)
+{
+    if (ctx->platform == NULL) {
+      char *config_buf = NULL;
+    size_t config_size;
+    ret = get_api_server_configmap(ctx, KUBE_SYSTEM_NAMESPACE,AWS_AUTH_CONFIG_MAP,
+                               &config_buf, &config_size);
+    if (ret == -1) {
+        ctx->platform = flb_strdup(NATIVE_KUBERNETES_PLATFORM);
+    } else {
+        ctx->platform = flb_strdup(EKS_PLATFORM);
+    }
+    ctx->platform_len = strlen(ctx->platform);
+    ctx->new_keys++;
+    flb_plg_debug(ctx->ins, "Platform type is %s.", ctx->platform);
+    }
+}
+
 /*
  * Makes a call to IMDS to set get the values of all metadata fields.
  * It can be called repeatedly if some metadata calls initially do not succeed.
@@ -468,6 +624,7 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
     }
 
     if (ctx->enable_entity) {
+      if (strncmp(ctx->entity_type , FLB_FILTER_ENTITY_TYPE_SERVICE, FLB_FILTER_ENTITY_TYPE_SERVICE_LEN) == 0) {
         if (!ctx->account_id) {
             ret = get_metadata_by_key(ctx, FLB_FILTER_AWS_IMDS_ACCOUNT_ID_PATH,
                                   &ctx->account_id, &ctx->account_id_len,
@@ -491,6 +648,14 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
         } else {
             ctx->new_keys++;
         }
+      }
+
+      if (strncmp(ctx->entity_type , FLB_FILTER_ENTITY_TYPE_RESOURCE, FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN) == 0) {
+        get_cluster_from_environment(ctx)
+        get_platform(ctx)
+      }
+      // new keys for entity type field which should be added to message pack
+      ctx->new_keys++;
     }
 
     ctx->metadata_retrieved = FLB_TRUE;
@@ -654,7 +819,7 @@ static int cb_aws_filter(const void *data, size_t bytes,
                                   ctx->hostname, ctx->hostname_len);
         }
 
-        if (ctx->enable_entity && ctx->instance_id != NULL && ctx->account_id != NULL) {
+        if (ctx->enable_entity && ctx->instance_id != NULL && ctx->account_id != NULL && strncmp(ctx->entity_type , FLB_FILTER_ENTITY_TYPE_SERVICE, FLB_FILTER_ENTITY_TYPE_SERVICE_LEN) == 0) {
             // Pack instance ID with entity prefix for further processing
             msgpack_pack_str(&tmp_pck, FLB_FILTER_AWS_ENTITY_INSTANCE_ID_KEY_LEN);
             msgpack_pack_str_body(&tmp_pck,
@@ -672,7 +837,43 @@ static int cb_aws_filter(const void *data, size_t bytes,
             msgpack_pack_str(&tmp_pck, ctx->account_id_len);
             msgpack_pack_str_body(&tmp_pck,
                                   ctx->account_id, ctx->account_id_len);
+            // Pack entity type with entity prefix for further processing
+            msgpack_pack_str(&tmp_pck, FLB_FILTER_AWS_ENTITY_TYPE_KEY_LEN);
+            msgpack_pack_str_body(&tmp_pck,
+                                  FLB_FILTER_AWS_ENTITY_TYPE_KEY,
+                                  FLB_FILTER_AWS_ENTITY_TYPE_KEY_LEN);
+            msgpack_pack_str(&tmp_pck, ctx->entity_type);
+            msgpack_pack_str_body(&tmp_pck,
+                                  ctx->entity_type, strlen(ctx->entity_type));
         }
+
+        if (ctx->enable_entity && ctx->cluster !=NULL && ctx->platform != NULL && strncmp(ctx->entity_type , FLB_FILTER_ENTITY_TYPE_RESOURCE, FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN) == 0 ) {
+          // Pack cluster name with entity prefix for further processing
+            msgpack_pack_str(&tmp_pck, FLB_FILTER_AWS_ENTITY_CLUSTER_KEY_LEN);
+            msgpack_pack_str_body(&tmp_pck,
+                                  FLB_FILTER_AWS_ENTITY_CLUSTER_KEY,
+                                  FLB_FILTER_AWS_ENTITY_CLUSTER_KEY_LEN);
+            msgpack_pack_str(&tmp_pck, ctx->cluster);
+            msgpack_pack_str_body(&tmp_pck,
+                                  ctx->cluster, ctx->cluster_len);
+           // Pack platform with entity prefix for further processing
+            msgpack_pack_str(&tmp_pck, FLB_FILTER_AWS_ENTITY_PLATFORM_KEY_LEN);
+            msgpack_pack_str_body(&tmp_pck,
+                                  FLB_FILTER_AWS_ENTITY_PLATFORM_KEY,
+                                  FLB_FILTER_AWS_ENTITY_PLATFORM_KEY_LEN);
+            msgpack_pack_str(&tmp_pck, ctx->platform);
+            msgpack_pack_str_body(&tmp_pck,
+                                  ctx->platform, ctx->platform_len);
+            // Pack entity type with entity prefix for further processing
+            msgpack_pack_str(&tmp_pck, FLB_FILTER_AWS_ENTITY_TYPE_KEY_LEN);
+            msgpack_pack_str_body(&tmp_pck,
+                                  FLB_FILTER_AWS_ENTITY_TYPE_KEY,
+                                  FLB_FILTER_AWS_ENTITY_TYPE_KEY_LEN);
+            msgpack_pack_str(&tmp_pck, ctx->entity_type);
+            msgpack_pack_str_body(&tmp_pck,
+                                  ctx->entity_type, strlen(ctx->entity_type));
+        }
+
     }
     msgpack_unpacked_destroy(&result);
 
@@ -724,6 +925,17 @@ static void flb_filter_aws_destroy(struct flb_filter_aws *ctx)
         flb_sds_destroy(ctx->hostname);
     }
 
+    if(ctx->kubernetes_upstream) {
+      flb_upstream_destroy(ctx->kubernetes_upstream);
+    }
+
+    if(ctx->cluster) {
+      flb_sds_destroy(ctx->cluster);
+    }
+
+    if(ctx->platform) {
+      flb_sds_destroy(ctx->platform);
+    }
     flb_free(ctx);
 }
 
@@ -791,6 +1003,12 @@ static struct flb_config_map config_map[] = {
     0, FLB_TRUE, offsetof(struct flb_filter_aws, enable_entity),
     "Enable entity prefix for fields used for constructing entity."
     "This currently only affects instance ID"
+    },
+    {
+    FLB_CONFIG_MAP_STR, "entity_type", "Service",
+    0, FLB_TRUE, offsetof(struct flb_filter_aws, entity_type),
+    "Defines the type of entity and adds related entity fields"
+    "Possible values Service or Resource"
     },
     {0}
 };

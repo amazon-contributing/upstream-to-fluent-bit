@@ -67,6 +67,37 @@
 #define FLB_FILTER_AWS_ENTITY_ACCOUNT_ID_KEY_LEN          21
 #define FLB_FILTER_AWS_HOSTNAME_KEY                       "hostname"
 #define FLB_FILTER_AWS_HOSTNAME_KEY_LEN                   8
+#define FLB_FILTER_AWS_ENTITY_PLATFORM_KEY             "aws_entity_platform"
+#define FLB_FILTER_AWS_ENTITY_PLATFORM_KEY_LEN         19
+#define FLB_FILTER_AWS_ENTITY_CLUSTER_KEY             "aws_entity_cluster"
+#define FLB_FILTER_AWS_ENTITY_CLUSTER_KEY_LEN         18
+#define FLB_FILTER_AWS_ENTITY_TYPE_KEY             "aws_entity_type"
+#define FLB_FILTER_AWS_ENTITY_TYPE_KEY_LEN         15
+
+/*
+ * Possible entity type values for aws plugin
+ */
+#define FLB_FILTER_ENTITY_TYPE_RESOURCE                   "resource"
+#define FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN                8
+#define FLB_FILTER_ENTITY_TYPE_SERVICE                "service"
+#define FLB_FILTER_ENTITY_TYPE_SERVICE_LEN              7
+/*
+ * Possible platform values for aws plugin
+ */
+#define NATIVE_KUBERNETES_PLATFORM "k8s"
+#define EKS_PLATFORM "eks"
+
+/*
+ * Configmap used for verifying whether if FluentBit is
+ * on EKS or native Kubernetes
+ */
+#define KUBE_SYSTEM_NAMESPACE "kube-system"
+#define AWS_AUTH_CONFIG_MAP "aws-auth"
+
+/* Kubernetes API server info */
+#define FLB_API_HOST  "kubernetes.default.svc"
+#define FLB_API_PORT  443
+#define FLB_API_TLS   FLB_TRUE
 
 struct flb_filter_aws {
     /* upstream connection to ec2 IMDS */
@@ -120,6 +151,27 @@ struct flb_filter_aws {
     * 'aws_entity' to relevant keys
     */
     int enable_entity;
+
+    /*
+    * Defines the type of entity.
+    * Possible values resource or service
+    */
+    flb_sds_t entity_type;
+    si
+
+    char *cluster;
+    int cluster_len;
+    char *platform;
+    int platform_len;
+
+    /*
+     * This connection is used for calling Kubernetes configmaps
+     * endpoint so pod association can determine the environment.
+     * Example: EKS or Native Kubernetes.
+     */
+    char *kubernetes_api_host;
+    int kubernetes_api_port;
+    struct flb_upstream *kubernetes_upstream;
 
     /* number of new keys added by this plugin */
     int new_keys;
