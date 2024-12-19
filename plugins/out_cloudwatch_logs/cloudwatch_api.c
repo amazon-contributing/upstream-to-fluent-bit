@@ -1126,6 +1126,33 @@ void parse_entity(struct flb_cloudwatch *ctx, entity *entity, msgpack_object map
             }
             entity->key_attributes->account_id = flb_strndup(val.via.str.ptr, val.via.str.size);
         }
+        if (strncmp(ctx->entity_type , FLB_FILTER_ENTITY_TYPE_RESOURCE, FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN) == 0) {
+            if(entity->key_attributes->type != NULL) {
+               flb_free(entity->key_attributes->platform);
+            }
+            entity->key_attributes->type = "Resource";
+        } else {
+            if(entity->key_attributes->type != NULL) {
+               flb_free(entity->key_attributes->platform);
+            }
+            entity->key_attributes->type = "Service";
+        }
+        if(strncmp(key.via.str.ptr, "aws_entity_platform",key.via.str.size ) == 0 ) {
+            if(entity->key_attributes->platform == NULL) {
+                entity->root_filter_count++;
+            } else {
+                flb_free(entity->key_attributes->platform);
+            }
+            entity->key_attributes->platform = flb_strndup(val.via.str.ptr, val.via.str.size);
+        }
+        if(strncmp(key.via.str.ptr, "aws_entity_cluster",key.via.str.size ) == 0 ) {
+            if(entity->key_attributes->cluster_name == NULL) {
+                entity->root_filter_count++;
+            } else {
+                flb_free(entity->key_attributes->cluster_name);
+            }
+            entity->key_attributes->cluster_name = flb_strndup(val.via.str.ptr, val.via.str.size);
+        }
     }
     if(entity->key_attributes->name == NULL && entity->attributes->name_source == NULL &&entity->attributes->workload != NULL) {
         entity->key_attributes->name = flb_strndup(entity->attributes->workload, strlen(entity->attributes->workload));
@@ -1150,16 +1177,21 @@ void update_or_create_entity(struct flb_cloudwatch *ctx, struct log_stream *stre
             }
             memset(stream->entity->key_attributes, 0, sizeof(entity_key_attributes));
 
-            stream->entity->attributes = flb_malloc(sizeof(entity_attributes));
-            if (stream->entity->attributes == NULL) {
-                return;
+            if (strncmp(ctx->entity_type , FLB_FILTER_ENTITY_TYPE_SERVICE, FLB_FILTER_ENTITY_TYPE_SERVICE_LEN) == 0) {
+                stream->entity->attributes = flb_malloc(sizeof(entity_attributes));
+                if (stream->entity->attributes == NULL) {
+                    return;
+                }
+                memset(stream->entity->attributes, 0, sizeof(entity_attributes));
+                stream->entity->filter_count = 0;
+                stream->entity->root_filter_count = 0;
+                stream->entity->service_name_found = 0;
+                stream->entity->environment_found = 0;
+                stream->entity->name_source_found = 0;
+            } else if (strncmp(ctx->entity_type , FLB_FILTER_ENTITY_TYPE_RESOURCE, FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN) == 0) {
+                stream->entity->cluster_name_found = 0;
+                stream->entity->cluster_platform_found = 0;
             }
-            memset(stream->entity->attributes, 0, sizeof(entity_attributes));
-            stream->entity->filter_count = 0;
-            stream->entity->root_filter_count = 0;
-            stream->entity->service_name_found = 0;
-            stream->entity->environment_found = 0;
-            stream->entity->name_source_found = 0;
         }
         parse_entity(ctx,stream->entity,map, map.via.map.size);
         if (!stream->entity) {

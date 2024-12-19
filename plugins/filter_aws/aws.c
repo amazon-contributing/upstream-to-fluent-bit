@@ -1137,7 +1137,7 @@ static struct flb_config_map config_map[] = {
     {
     FLB_CONFIG_MAP_STR, "entity_type", "service",
     0, FLB_TRUE, offsetof(struct flb_filter_aws, entity_type),
-    "Defines the type of entity and adds related entity fields"
+    "Defines the type of entity and adds related entity fields."
     "Possible values Service or Resource"
     },
     {

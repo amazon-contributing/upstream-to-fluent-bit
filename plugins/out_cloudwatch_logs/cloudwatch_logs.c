@@ -676,6 +676,12 @@ static struct flb_config_map config_map[] = {
     "add entity to PutLogEvent calls"
    },
 
+   {
+     FLB_CONFIG_MAP_STR, "entity_type", "service",
+     0, FLB_TRUE, offsetof(struct flb_cloudwatch, entity_type),
+     "store the entity type. Possible values resource or service"
+    },
+
     /* EOF */
     {0}
 };
