@@ -105,6 +105,31 @@ static void expose_aws_meta(struct flb_filter_aws *ctx)
     }
 }
 
+static void create_kubernetes_upstream(struct flb_filter_aws *ctx, struct flb_config *config) {
+    ctx->kubernetes_upstream = NULL;
+    
+    ctx->tls = flb_tls_create(ctx->tls_verify,
+                                  ctx->tls_debug,
+                                  ctx->tls_vhost,
+                                  ctx->tls_ca_path,
+                                  ctx->tls_ca_file,
+                                  NULL, NULL, NULL);
+    if (!ctx->tls) {
+        flb_plg_error(ctx->ins, "tls creation failed in creating k8s upstream");
+    }
+
+    /* Create an Upstream context */
+    ctx->kubernetes_upstream = flb_upstream_create(config,
+                                    flb_strdup(FLB_API_HOST),
+                                    FLB_API_PORT,
+                                    FLB_IO_TLS,
+                                    ctx->tls);
+    flb_plg_info(ctx->ins, "kubernetes upstream connection created in aws plugin");
+    if (!ctx->kubernetes_upstream) {
+        flb_plg_info(ctx->ins, "kubernetes upstream connection initialization error in aws plugin");
+    }
+}
+
 static int cb_aws_init(struct flb_filter_instance *f_ins,
                        struct flb_config *config,
                        void *data)
@@ -166,6 +191,12 @@ static int cb_aws_init(struct flb_filter_instance *f_ins,
     /* Remove async flag from upstream */
     ctx->ec2_upstream->flags &= ~(FLB_IO_ASYNC);
 
+    /*Create kubernetes upstream to query k8s api to define the platform type*/
+    if (ctx->enable_entity && strncmp(ctx->entity_type, FLB_FILTER_ENTITY_TYPE_RESOURCE, FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN) == 0) {
+        create_kubernetes_upstream(ctx, config);
+    }
+    ctx->kube_token_create = 0;
+
     /* Retrieve metadata */
     ret = get_ec2_metadata(ctx);
     if (ret < 0) {
@@ -178,18 +209,6 @@ static int cb_aws_init(struct flb_filter_instance *f_ins,
     }
     else {
         expose_aws_meta(ctx);
-    }
-
-    if (ctx->enable_entity && strncmp(ctx->entity_type, FLB_FILTER_ENTITY_TYPE_RESOURCE, FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN) == 0) {
-       ctx->kubernetes_upstream = flb_upstream_create(config,
-                                    FLB_API_HOST,
-                                    FLB_API_PORT,
-                                    FLB_IO_TLS,
-                                    NULL);
-        flb_plg_info(ctx->ins, "kubernetes upstream connection created in aws plugin");
-    }
-    if (!ctx->kubernetes_upstream) {
-        flb_plg_info(ctx->ins, "kubernetes upstream connection initialization error in aws plugin");
     }
     flb_filter_set_context(f_ins, ctx);
     return 0;
@@ -451,15 +470,19 @@ static int get_http_auth_header(struct flb_filter_aws *ctx)
     if (ret == -1) {
         flb_plg_warn(ctx->ins, "cannot open %s", FLB_KUBE_TOKEN);
     }
-    flb_plg_info(ctx->ins, " token updated", FLB_KUBE_TOKEN);
+    flb_plg_info(ctx->ins, " token updated %s", FLB_KUBE_TOKEN);
     ctx->kube_token_create = time(NULL);
-
+    flb_plg_info(ctx->ins, "checking token %s with size %d", tk, tk_size);
     /* Token */
     if (ctx->token != NULL) {
+        flb_plg_info(ctx->ins, "ctx token is not NULL");
         flb_free(ctx->token);
     }
+    flb_plg_info(ctx->ins, "freed ctx token");
     ctx->token = tk;
     ctx->token_len = tk_size;
+
+    flb_plg_info(ctx->ins, "token len is %s", ctx->token_len );
 
     /* HTTP Auth Header */
     if (ctx->auth == NULL) {
@@ -545,9 +568,6 @@ static int get_meta_info_from_request(struct flb_filter_aws *ctx,
         return -1;
     }
 
-    /* Buffer size for HTTP Client when reading responses from API Server */
-    ctx->buffer_size = 32000;
-
     /* Compose HTTP Client request*/
     c = flb_http_client(u_conn, FLB_HTTP_GET,
                         uri,
@@ -567,7 +587,7 @@ static int get_meta_info_from_request(struct flb_filter_aws *ctx,
 
     if (ret != 0 || c->resp.status != 200) {
         if (c->resp.payload_size > 0) {
-            flb_plg_debug(ctx->ins, "HTTP response\n%s",
+            flb_plg_info(ctx->ins, "HTTP response\n%s",
                           c->resp.payload);
         }
         flb_http_client_destroy(c);
@@ -619,6 +639,7 @@ static int get_api_server_configmap(struct flb_filter_aws *ctx,
 
     /* validate pack */
     if (packed == -1) {
+        flb_plg_info(ctx->ins, "Packed is -1 in get API Server for configmap information");
         return -1;
     }
 
@@ -637,8 +658,10 @@ static void get_platform(struct flb_filter_aws *ctx)
         ret = get_api_server_configmap(ctx, KUBE_SYSTEM_NAMESPACE,AWS_AUTH_CONFIG_MAP,
                                 &config_buf, &config_size);
         if (ret == -1) {
+            flb_plg_error(ctx->ins, "Api server configmap returned -1. Platform is defaulting to k8s");
             ctx->platform = flb_strdup(NATIVE_KUBERNETES_PLATFORM);
         } else {
+            flb_plg_info(ctx->ins, "Platform is set to EKS");
             ctx->platform = flb_strdup(EKS_PLATFORM);
         }
         ctx->platform_len = strlen(ctx->platform);
@@ -942,8 +965,6 @@ static int cb_aws_filter(const void *data, size_t bytes,
         }
 
         if (ctx->enable_entity && ctx->instance_id != NULL && ctx->account_id != NULL && strncmp(ctx->entity_type , FLB_FILTER_ENTITY_TYPE_SERVICE, FLB_FILTER_ENTITY_TYPE_SERVICE_LEN) == 0) {
-            flb_plg_info(ctx->ins,
-                      "Adding instance id and account id to message pack");
             // Pack instance ID with entity prefix for further processing
             msgpack_pack_str(&tmp_pck, FLB_FILTER_AWS_ENTITY_INSTANCE_ID_KEY_LEN);
             msgpack_pack_str_body(&tmp_pck,
@@ -971,9 +992,7 @@ static int cb_aws_filter(const void *data, size_t bytes,
                                   ctx->entity_type, strlen(ctx->entity_type));
         }
 
-        if (ctx->enable_entity && ctx->cluster !=NULL && ctx->platform != NULL && strncmp(ctx->entity_type , FLB_FILTER_ENTITY_TYPE_RESOURCE, FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN) == 0 ) {
-            flb_plg_info(ctx->ins,
-                      "Adding cluster name and type to message pack");
+        if (ctx->enable_entity && ctx->cluster != NULL && ctx->platform != NULL && strncmp(ctx->entity_type , FLB_FILTER_ENTITY_TYPE_RESOURCE, FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN) == 0 ) {
             // Pack cluster name with entity prefix for further processing
             msgpack_pack_str(&tmp_pck, FLB_FILTER_AWS_ENTITY_CLUSTER_KEY_LEN);
             msgpack_pack_str_body(&tmp_pck,
@@ -1066,6 +1085,8 @@ static void flb_filter_aws_destroy(struct flb_filter_aws *ctx)
     if(ctx->entity_type){
         flb_sds_destroy(ctx->entity_type);
     }
+    flb_free(ctx->token);
+    flb_free(ctx->auth);
     flb_free(ctx);
 }
 
@@ -1137,13 +1158,55 @@ static struct flb_config_map config_map[] = {
     {
     FLB_CONFIG_MAP_STR, "entity_type", "service",
     0, FLB_TRUE, offsetof(struct flb_filter_aws, entity_type),
-    "Defines the type of entity and adds related entity fields"
+    "Defines the type of entity and adds related entity fields."
     "Possible values Service or Resource"
     },
     {
      FLB_CONFIG_MAP_TIME, "kube_token_ttl", "10m",
      0, FLB_TRUE, offsetof(struct flb_filter_aws, kube_token_ttl),
      "kubernetes token ttl, until it is reread from the token file. Default: 10m"
+    },
+    /* Buffer size for HTTP Client when reading responses from API Server */
+    {
+     FLB_CONFIG_MAP_SIZE, "buffer_size", "32K",
+     0, FLB_TRUE, offsetof(struct flb_filter_aws, buffer_size),
+     "buffer size to receive response from API server",
+    },
+
+    /* TLS: set debug 'level' */
+    {
+     FLB_CONFIG_MAP_INT, "tls.debug", "0",
+     0, FLB_TRUE, offsetof(struct flb_filter_aws, tls_debug),
+     "set TLS debug level: 0 (no debug), 1 (error), "
+     "2 (state change), 3 (info) and 4 (verbose)"
+    },
+
+    /* TLS: enable verification */
+    {
+     FLB_CONFIG_MAP_BOOL, "tls.verify", "true",
+     0, FLB_TRUE, offsetof(struct flb_filter_aws, tls_verify),
+     "enable or disable verification of TLS peer certificate"
+    },
+
+    /* TLS: set tls.vhost feature */
+    {
+     FLB_CONFIG_MAP_STR, "tls.vhost", NULL,
+     0, FLB_TRUE, offsetof(struct flb_filter_aws, tls_vhost),
+     "set optional TLS virtual host"
+    },
+
+        /* Kubernetes TLS: CA file */
+    {
+     FLB_CONFIG_MAP_STR, "kube_ca_file", FLB_KUBE_CA,
+     0, FLB_TRUE, offsetof(struct flb_filter_aws, tls_ca_file),
+     "Kubernetes TLS CA file"
+    },
+
+    /* Kubernetes TLS: CA certs path */
+    {
+     FLB_CONFIG_MAP_STR, "kube_ca_path", NULL,
+     0, FLB_TRUE, offsetof(struct flb_filter_aws, tls_ca_path),
+     "Kubernetes TLS ca path"
     },
     {0}
 };

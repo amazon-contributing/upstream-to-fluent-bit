@@ -100,6 +100,7 @@
 #define FLB_API_TLS   FLB_TRUE
 
 #define FLB_KUBE_TOKEN "/var/run/secrets/kubernetes.io/serviceaccount/token"
+#define FLB_KUBE_CA "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
 #define FLB_KUBE_CONFIGMAP "configmap"
 #define FLB_KUBE_API_CONFIGMAP_FMT "/api/v1/namespaces/%s/configmaps/%s"
 
@@ -202,6 +203,17 @@ struct flb_filter_aws {
     /* Kubernetes Token from FLB_KUBE_TOKEN file */
     char *token;
     size_t token_len;
+
+    struct flb_tls *tls;
+
+    /* TLS CA certificate file */
+    char *tls_ca_path;
+    char *tls_ca_file;
+    int tls_debug;
+    int tls_verify;
+    /* TLS virtual host (optional), set by configmap */
+    flb_sds_t tls_vhost;
+
 };
 
 #endif
