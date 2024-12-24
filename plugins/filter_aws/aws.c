@@ -482,7 +482,7 @@ static int get_http_auth_header(struct flb_filter_aws *ctx)
     ctx->token = tk;
     ctx->token_len = tk_size;
 
-    flb_plg_info(ctx->ins, "token len is %s", ctx->token_len );
+    flb_plg_info(ctx->ins, "token len is %d", ctx->token_len );
 
     /* HTTP Auth Header */
     if (ctx->auth == NULL) {
