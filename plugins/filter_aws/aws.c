@@ -788,12 +788,9 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
       }
 
       if (strncmp(ctx->entity_type , FLB_FILTER_ENTITY_TYPE_RESOURCE, FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN) == 0) {
-        flb_plg_info(ctx->ins, "getting cluster name and platform in aws plugin");
         get_cluster_from_environment(ctx);
         get_platform(ctx);
       }
-      // new keys for entity type field which should be added to message pack
-      ctx->new_keys++;
     }
 
     ctx->metadata_retrieved = FLB_TRUE;
@@ -975,14 +972,6 @@ static int cb_aws_filter(const void *data, size_t bytes,
             msgpack_pack_str(&tmp_pck, ctx->account_id_len);
             msgpack_pack_str_body(&tmp_pck,
                                   ctx->account_id, ctx->account_id_len);
-            // Pack entity type with entity prefix for further processing
-            msgpack_pack_str(&tmp_pck, FLB_FILTER_AWS_ENTITY_TYPE_KEY_LEN);
-            msgpack_pack_str_body(&tmp_pck,
-                                  FLB_FILTER_AWS_ENTITY_TYPE_KEY,
-                                  FLB_FILTER_AWS_ENTITY_TYPE_KEY_LEN);
-            msgpack_pack_str(&tmp_pck, strlen(ctx->entity_type));
-            msgpack_pack_str_body(&tmp_pck,
-                                  ctx->entity_type, strlen(ctx->entity_type));
         }
 
         if (ctx->enable_entity && ctx->cluster != NULL && ctx->platform != NULL && strncmp(ctx->entity_type , FLB_FILTER_ENTITY_TYPE_RESOURCE, FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN) == 0 ) {
@@ -1002,14 +991,6 @@ static int cb_aws_filter(const void *data, size_t bytes,
             msgpack_pack_str(&tmp_pck, ctx->platform_len);
             msgpack_pack_str_body(&tmp_pck,
                                   ctx->platform, ctx->platform_len);
-            // Pack entity type with entity prefix for further processing
-            msgpack_pack_str(&tmp_pck, FLB_FILTER_AWS_ENTITY_TYPE_KEY_LEN);
-            msgpack_pack_str_body(&tmp_pck,
-                                  FLB_FILTER_AWS_ENTITY_TYPE_KEY,
-                                  FLB_FILTER_AWS_ENTITY_TYPE_KEY_LEN);
-            msgpack_pack_str(&tmp_pck, strlen(ctx->entity_type));
-            msgpack_pack_str_body(&tmp_pck,
-                                  ctx->entity_type, strlen(ctx->entity_type));
         }
 
     }

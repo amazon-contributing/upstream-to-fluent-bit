@@ -71,8 +71,6 @@
 #define FLB_FILTER_AWS_ENTITY_PLATFORM_KEY_LEN            19
 #define FLB_FILTER_AWS_ENTITY_CLUSTER_KEY                 "aws_entity_cluster"
 #define FLB_FILTER_AWS_ENTITY_CLUSTER_KEY_LEN             18
-#define FLB_FILTER_AWS_ENTITY_TYPE_KEY                    "aws_entity_type"
-#define FLB_FILTER_AWS_ENTITY_TYPE_KEY_LEN                15
 
 /*
  * Possible entity type values for aws plugin
@@ -82,7 +80,7 @@
 #define FLB_FILTER_ENTITY_TYPE_SERVICE                    "service"
 #define FLB_FILTER_ENTITY_TYPE_SERVICE_LEN                7
 /*
- * Possible platform values for aws plugin
+ * Possible cluster platform values for aws plugin
  */
 #define NATIVE_KUBERNETES_PLATFORM "k8s"
 #define EKS_PLATFORM "eks"

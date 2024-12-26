@@ -40,8 +40,6 @@ typedef struct entity {
     int environment_found;
     int name_source_found;
     int root_filter_count;
-    int cluster_name_found;
-    int cluster_platform_found;
 }entity;
 
 /* KeyAttributes used for CloudWatch Entity object
