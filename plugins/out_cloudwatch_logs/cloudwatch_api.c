@@ -239,6 +239,7 @@ error:
 }
 
 static int entity_add_resource_key_attributes(struct flb_cloudwatch *ctx, struct cw_flush *buf, struct log_stream *stream, int *offset) {
+    flb_plg_info(ctx->ins, "entity_add_resource_key_attributes is called");
     char ts[KEY_ATTRIBUTES_MAX_LEN];
     if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
                       "\"keyAttributes\":{",0)) {
@@ -249,14 +250,16 @@ static int entity_add_resource_key_attributes(struct flb_cloudwatch *ctx, struct
         goto error;
     }
     if(stream->entity->key_attributes->platform != NULL && strlen(stream->entity->key_attributes->platform) != 0) {
-        if (strncmp(stream->entity->key_attributes->platform, EKS_PLATFORM, 3)) {
+        flb_plg_info(ctx->ins, "stream entity resource platform %s", stream->entity->key_attributes->platform);
+        if (strncmp(stream->entity->key_attributes->platform, EKS_PLATFORM, 3) == 0) {
+            flb_plg_info(ctx->ins, "setting platform to eks %s", stream->entity->key_attributes->platform);
             if (!snprintf(ts,KEY_ATTRIBUTES_MAX_LEN, ",%s%s%s","\"ResourceType\":\"","AWS::EKS::Cluster","\"")) {
                 goto error;
             }
             if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
                 goto error;
             }
-        } else if (strncmp(stream->entity->key_attributes->platform, NATIVE_KUBERNETES_PLATFORM, 3)) {
+        } else if (strncmp(stream->entity->key_attributes->platform, NATIVE_KUBERNETES_PLATFORM, 3) == 0) {
             if (!snprintf(ts,KEY_ATTRIBUTES_MAX_LEN, ",%s%s%s","\"ResourceType\":\"","K8s::Cluster","\"")) {
                 goto error;
             }
@@ -274,7 +277,7 @@ static int entity_add_resource_key_attributes(struct flb_cloudwatch *ctx, struct
         }
     }
     if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
-              "},", 2)) {
+              "}", 1)) {
         goto error;
     }
     return 0;
@@ -418,7 +421,7 @@ static int init_put_payload(struct flb_cloudwatch *ctx, struct cw_flush *buf,
                         "\"entity\":{", 10)) {
                 goto error;
         }
-        if (strncmp(ctx->entity_type, FLB_FILTER_ENTITY_TYPE_RESOURCE, FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN) == 0) {
+        if (strncmp(ctx->entity_type, FLB_FILTER_ENTITY_TYPE_RESOURCE, FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN) == 0 && stream->entity->key_attributes->platform != NULL && stream->entity->key_attributes->cluster_name != NULL) {
             if(stream->entity->key_attributes != NULL) {
                 ret = entity_add_resource_key_attributes(ctx,buf,stream,offset);
                 if (ret < 0) {
@@ -448,12 +451,12 @@ static int init_put_payload(struct flb_cloudwatch *ctx, struct cw_flush *buf,
                 goto error;
         }
     }
-    
 
     if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
                       "\"logEvents\":[", 13)) {
         goto error;
     }
+    flb_plg_info(ctx->ins, "entity %s", buf->out_buf);
 
     return 0;
 
@@ -808,7 +811,7 @@ retry:
         return -1;
     }
 
-    flb_plg_debug(ctx->ins, "cloudwatch:PutLogEvents: events=%d, payload=%d bytes", i, offset);
+    flb_plg_info(ctx->ins, "cloudwatch:PutLogEvents: events=%d, payload=%d bytes", i, offset);
     ret = put_log_events(ctx, buf, buf->current_stream, (size_t) offset);
     if (ret < 0) {
         flb_plg_error(ctx->ins, "Failed to send log events");
@@ -1187,6 +1190,7 @@ void parse_entity(struct flb_cloudwatch *ctx, entity *entity, msgpack_object map
                 flb_free(entity->key_attributes->platform);
             }
             entity->key_attributes->platform = flb_strndup(val.via.str.ptr, val.via.str.size);
+            flb_plg_info(ctx->ins,"entity platform is added %s", entity->key_attributes->platform);
         }
         if(strncmp(key.via.str.ptr, "aws_entity_cluster",key.via.str.size ) == 0 ) {
             if(entity->key_attributes->cluster_name == NULL) {
@@ -1195,14 +1199,17 @@ void parse_entity(struct flb_cloudwatch *ctx, entity *entity, msgpack_object map
                 flb_free(entity->key_attributes->cluster_name);
             }
             entity->key_attributes->cluster_name = flb_strndup(val.via.str.ptr, val.via.str.size);
+            flb_plg_info(ctx->ins,"entity cluster name is added %s", entity->key_attributes->cluster_name);
         }
     }
-    if(entity->key_attributes->name == NULL && entity->attributes->name_source == NULL &&entity->attributes->workload != NULL) {
-        entity->key_attributes->name = flb_strndup(entity->attributes->workload, strlen(entity->attributes->workload));
-        entity->attributes->name_source = flb_strndup("K8sWorkload", 11);
-    }
-    if(entity->key_attributes->environment == NULL) {
-        entity->key_attributes->environment = find_fallback_environment(ctx, entity);
+    if (strncmp(ctx->entity_type, FLB_FILTER_ENTITY_TYPE_SERVICE, FLB_FILTER_ENTITY_TYPE_SERVICE_LEN) == 0) {
+        if(entity->key_attributes->name == NULL && entity->attributes->name_source == NULL &&entity->attributes->workload != NULL) {
+            entity->key_attributes->name = flb_strndup(entity->attributes->workload, strlen(entity->attributes->workload));
+            entity->attributes->name_source = flb_strndup("K8sWorkload", 11);
+        }
+        if(entity->key_attributes->environment == NULL) {
+            entity->key_attributes->environment = find_fallback_environment(ctx, entity);
+        }
     }
 }
 
@@ -1314,7 +1321,7 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
         map = root.via.array.ptr[1];
         map_size = map.via.map.size;
 
-        if(ctx->kubernete_metadata_enabled && ctx->add_entity) {
+        if( ctx->add_entity && ( ctx->kubernete_metadata_enabled || strncmp(ctx->entity_type, FLB_FILTER_ENTITY_TYPE_RESOURCE, FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN) == 0 )) {
             msgpack_sbuffer_init(&filtered_sbuf);
             msgpack_unpacked_init(&modified_unpacked);
         }
@@ -1323,10 +1330,13 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
             flb_plg_debug(ctx->ins, "Couldn't determine log group & stream for record with tag %s", tag);
             goto error;
         }
-        if(ctx->kubernete_metadata_enabled && ctx->add_entity) {
+        if(ctx->add_entity && ( ctx->kubernete_metadata_enabled || strncmp(ctx->entity_type, FLB_FILTER_ENTITY_TYPE_RESOURCE, FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN) == 0 )) {
             update_or_create_entity(ctx,stream,map);
             // Prepare a buffer to pack the modified map
             if(stream->entity != NULL && (stream->entity->root_filter_count > 0 || stream->entity->filter_count > 0)) {
+                if (strncmp(ctx->entity_type, FLB_FILTER_ENTITY_TYPE_RESOURCE, FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN) == 0) {
+                    flb_plg_info(ctx->ins, "stream->entity->root_filter_count %d", stream->entity->root_filter_count);
+                }
                 msgpack_packer pk;
                 msgpack_packer_init(&pk, &filtered_sbuf, msgpack_sbuffer_write);
                 remove_unneeded_field(&map, "kubernetes",&pk,stream->entity->root_filter_count, stream->entity->filter_count);
@@ -1456,7 +1466,7 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
         if (ret == 0) {
             i++;
         }
-        if(ctx->kubernete_metadata_enabled && ctx->add_entity) {
+        if(ctx->add_entity && ( ctx->kubernete_metadata_enabled || strncmp(ctx->entity_type, FLB_FILTER_ENTITY_TYPE_RESOURCE, FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN) == 0 )) {
             msgpack_sbuffer_destroy(&filtered_sbuf);
             msgpack_unpacked_destroy(&modified_unpacked);
         }
@@ -1475,7 +1485,7 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
 
 error:
     msgpack_unpacked_destroy(&result);
-    if(ctx->kubernete_metadata_enabled && ctx->add_entity) {
+    if(ctx->add_entity && ( ctx->kubernete_metadata_enabled || strncmp(ctx->entity_type, FLB_FILTER_ENTITY_TYPE_RESOURCE, FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN) == 0 )) {
         msgpack_sbuffer_destroy(&filtered_sbuf);
         msgpack_unpacked_destroy(&modified_unpacked);
     }
@@ -1886,7 +1896,8 @@ int put_log_events(struct flb_cloudwatch *ctx, struct cw_flush *buf,
     int num_headers = 1;
     int retry = FLB_TRUE;
 
-    flb_plg_debug(ctx->ins, "Sending log events to log stream %s", stream->name);
+    flb_plg_info(ctx->ins, "Sending log events to log stream %s", stream->name);
+    flb_plg_info(ctx->ins, "data buf %s", buf->out_buf);
 
     /* stream is being used, update expiration */
     stream->expiration = time(NULL) + FOUR_HOURS_IN_SECONDS;
@@ -1909,9 +1920,9 @@ retry_request:
     }
 
     if (c) {
-        flb_plg_debug(ctx->ins, "PutLogEvents http status=%d", c->resp.status);
-        flb_plg_debug(ctx->ins, "PutLogEvents http data=%s", c->resp.data);
-        flb_plg_debug(ctx->ins, "PutLogEvents http payload=%s", c->resp.payload);
+        flb_plg_info(ctx->ins, "PutLogEvents http status=%d", c->resp.status);
+        flb_plg_info(ctx->ins, "PutLogEvents http data=%s", c->resp.data);
+        flb_plg_info(ctx->ins, "PutLogEvents http payload=%s", c->resp.payload);
 
         if (c->resp.status == 200) {
             if (c->resp.data == NULL || c->resp.data_len == 0 || strstr(c->resp.data, AMZN_REQUEST_ID_HEADER) == NULL) {
