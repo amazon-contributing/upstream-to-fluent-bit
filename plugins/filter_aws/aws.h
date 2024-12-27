@@ -171,8 +171,6 @@ struct flb_filter_aws {
      * endpoint so pod association can determine the environment.
      * Example: EKS or Native Kubernetes.
      */
-    char *kubernetes_api_host;
-    int kubernetes_api_port;
     struct flb_upstream *kubernetes_upstream;
 
     /* number of new keys added by this plugin */
@@ -194,7 +192,6 @@ struct flb_filter_aws {
     size_t auth_len;
 
     /* Command to get Kubernetes Authorization Token */
-    const char *kube_token_command; 
     int kube_token_create;
     int kube_token_ttl;
 

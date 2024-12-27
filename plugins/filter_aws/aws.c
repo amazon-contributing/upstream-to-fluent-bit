@@ -115,7 +115,7 @@ static void create_kubernetes_upstream(struct flb_filter_aws *ctx, struct flb_co
                                   ctx->tls_ca_file,
                                   NULL, NULL, NULL);
     if (!ctx->tls) {
-        flb_plg_error(ctx->ins, "tls creation failed in creating k8s upstream");
+        flb_plg_error(ctx->ins, "tls creation failed in creating k8s upstream in aws plugin");
     }
 
     /* Create an Upstream context */
@@ -124,9 +124,8 @@ static void create_kubernetes_upstream(struct flb_filter_aws *ctx, struct flb_co
                                     FLB_API_PORT,
                                     FLB_IO_TLS,
                                     ctx->tls);
-    flb_plg_info(ctx->ins, "kubernetes upstream connection created in aws plugin");
     if (!ctx->kubernetes_upstream) {
-        flb_plg_info(ctx->ins, "kubernetes upstream connection initialization error in aws plugin");
+        flb_plg_error(ctx->ins, "kubernetes upstream connection initialization error in aws plugin");
     }
 }
 
@@ -412,7 +411,7 @@ static void get_cluster_from_environment(struct flb_filter_aws *ctx)
         } else {
             free(cluster_name);
         }
-        flb_plg_info(ctx->ins, "Cluster name is %s.", ctx->cluster);
+        flb_plg_debug(ctx->ins, "Cluster name is %s.", ctx->cluster);
     }
 }
 
@@ -539,8 +538,6 @@ static int get_meta_info_from_request(struct flb_filter_aws *ctx,
                                       int *root_type,
                                       char* uri)
 {
-    flb_plg_info(ctx->ins,
-                      "get meta info from request is called");
     struct flb_http_client *c;
     struct flb_upstream_conn *u_conn;
     int ret;
@@ -577,7 +574,7 @@ static int get_meta_info_from_request(struct flb_filter_aws *ctx,
     }
 
     ret = flb_http_do(c, &b_sent);
-    flb_plg_info(ctx->ins, "Request (ns=%s, %s=%s) http_do=%i, "
+    flb_plg_debug(ctx->ins, "Request (ns=%s, %s=%s) http_do=%i, "
                   "HTTP Status: %i",
                   namespace, resource_type, resource_name, ret, c->resp.status);
 
@@ -607,8 +604,6 @@ static int get_api_server_configmap(struct flb_filter_aws *ctx,
                                const char *namespace, const char *configmap,
                                char **out_buf, size_t *out_size)
 {
-    flb_plg_info(ctx->ins,
-                      "get API Server for configmap information");
     int ret;
     int packed = -1;
     int root_type;
@@ -627,8 +622,8 @@ static int get_api_server_configmap(struct flb_filter_aws *ctx,
         if (ret == -1) {
             return -1;
         }
-        flb_plg_info(ctx->ins,
-                      "Send out request to API Server for configmap information");
+        flb_plg_debug(ctx->ins,
+                      "Send out request to API Server for configmap information in aws plugin");
         packed = get_meta_info_from_request(ctx,ctx->kubernetes_upstream, namespace,FLB_KUBE_CONFIGMAP, configmap,
                                     &buf, &size, &root_type, uri);
     }
@@ -659,7 +654,7 @@ static void get_platform(struct flb_filter_aws *ctx)
         }
         ctx->platform_len = strlen(ctx->platform);
         ctx->new_keys++;
-        flb_plg_info(ctx->ins, "Platform type is %s.", ctx->platform);
+        flb_plg_debug(ctx->ins, "Platform type is %s.", ctx->platform);
     }
 }
 
@@ -786,7 +781,8 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
             ctx->new_keys++;
         }
       }
-
+      ctx->cluster = NULL;
+      ctx->platform = NULL;
       if (strncmp(ctx->entity_type , FLB_FILTER_ENTITY_TYPE_RESOURCE, FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN) == 0) {
         get_cluster_from_environment(ctx);
         get_platform(ctx);
@@ -1042,6 +1038,10 @@ static void flb_filter_aws_destroy(struct flb_filter_aws *ctx)
 
     if (ctx->hostname) {
         flb_sds_destroy(ctx->hostname);
+    }
+
+    if(ctx->tls) {
+        flb_tls_destroy(ctx->tls);
     }
 
     if(ctx->kubernetes_upstream) {
