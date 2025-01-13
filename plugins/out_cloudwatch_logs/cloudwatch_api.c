@@ -277,6 +277,14 @@ static int entity_add_resource_key_attributes(struct flb_cloudwatch *ctx, struct
             goto error;
         }
     }
+    if(stream->entity->key_attributes->account_id != NULL && strlen(stream->entity->key_attributes->account_id) != 0) {
+        if (!snprintf(ts,KEY_ATTRIBUTES_MAX_LEN, ",%s%s%s","\"AwsAccountId\":\"",stream->entity->key_attributes->account_id,"\"")) {
+            goto error;
+        }
+        if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
+            goto error;
+        }
+    }
     if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
               "}", 1)) {
         goto error;
@@ -417,39 +425,41 @@ static int init_put_payload(struct flb_cloudwatch *ctx, struct cw_flush *buf,
     // If we are missing the service name, the entity will get rejected by the frontend anyway
     // so do not emit entity unless service name is filled. If we are missing account ID
     // it is considered not having sufficient information for entity therefore we should drop the entity.
-    if(ctx->add_entity && stream->entity != NULL && stream->entity->key_attributes != NULL ) {
+    if(ctx->add_entity && stream->entity != NULL && stream->entity->key_attributes != NULL && strncmp(ctx->entity_type, FLB_FILTER_ENTITY_TYPE_RESOURCE, FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN) == 0 && stream->entity->key_attributes->platform != NULL && stream->entity->key_attributes->cluster_name != NULL && stream->entity->key_attributes->account_id != NULL) {
         if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
                         "\"entity\":{", 10)) {
                 goto error;
         }
-        if (strncmp(ctx->entity_type, FLB_FILTER_ENTITY_TYPE_RESOURCE, FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN) == 0 && stream->entity->key_attributes->platform != NULL && stream->entity->key_attributes->cluster_name != NULL) {
-            if(stream->entity->key_attributes != NULL) {
-                ret = entity_add_resource_key_attributes(ctx,buf,stream,offset);
-                if (ret < 0) {
-                    flb_plg_error(ctx->ins, "Failed to initialize Resource Entity KeyAttributes");
-                    goto error;
-                }
-            }
+        ret = entity_add_resource_key_attributes(ctx,buf,stream,offset);
+        if (ret < 0) {
+            flb_plg_error(ctx->ins, "Failed to initialize Resource Entity KeyAttributes");
+            goto error;
         }
-        else if (stream->entity->key_attributes->name != NULL && stream->entity->key_attributes->account_id != NULL) {
-            if(stream->entity->key_attributes != NULL) {
-                ret = entity_add_key_attributes(ctx,buf,stream,offset);
-                if (ret < 0) {
-                    flb_plg_error(ctx->ins, "Failed to initialize Entity KeyAttributes");
-                    goto error;
-                }
-            }
-            if(stream->entity->attributes != NULL) {
-                ret = entity_add_attributes(ctx,buf,stream,offset);
-                if (ret < 0) {
-                    flb_plg_error(ctx->ins, "Failed to initialize Entity Attributes");
-                    goto error;
-                }
+        if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
+                        "},", 2)) {
+            goto error;
+        }
+    }
+    else if (ctx->add_entity && stream->entity != NULL && stream->entity->key_attributes != NULL && stream->entity->key_attributes->name != NULL && stream->entity->key_attributes->account_id != NULL) {
+        if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
+                        "\"entity\":{", 10)) {
+                goto error;
+        }
+        ret = entity_add_key_attributes(ctx,buf,stream,offset);
+        if (ret < 0) {
+            flb_plg_error(ctx->ins, "Failed to initialize Entity KeyAttributes");
+            goto error;
+        }
+        if(stream->entity->attributes != NULL) {
+            ret = entity_add_attributes(ctx,buf,stream,offset);
+            if (ret < 0) {
+                flb_plg_error(ctx->ins, "Failed to initialize Entity Attributes");
+                goto error;
             }
         }
         if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
                         "},", 2)) {
-                goto error;
+            goto error;
         }
     }
 

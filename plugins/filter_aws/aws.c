@@ -953,16 +953,7 @@ static int cb_aws_filter(const void *data, size_t bytes,
                                   ctx->hostname, ctx->hostname_len);
         }
 
-        if (ctx->enable_entity && ctx->instance_id != NULL && ctx->account_id != NULL && strncmp(ctx->entity_type , FLB_FILTER_ENTITY_TYPE_SERVICE, FLB_FILTER_ENTITY_TYPE_SERVICE_LEN) == 0) {
-            // Pack instance ID with entity prefix for further processing
-            msgpack_pack_str(&tmp_pck, FLB_FILTER_AWS_ENTITY_INSTANCE_ID_KEY_LEN);
-            msgpack_pack_str_body(&tmp_pck,
-                                  FLB_FILTER_AWS_ENTITY_INSTANCE_ID_KEY,
-                                  FLB_FILTER_AWS_ENTITY_INSTANCE_ID_KEY_LEN);
-            msgpack_pack_str(&tmp_pck, ctx->instance_id_len);
-            msgpack_pack_str_body(&tmp_pck,
-                                  ctx->instance_id, ctx->instance_id_len);
-
+        if (ctx->enable_entity && ctx->account_id != NULL ) {
             // Pack account ID with entity prefix for further processing
             msgpack_pack_str(&tmp_pck, FLB_FILTER_AWS_ENTITY_ACCOUNT_ID_KEY_LEN);
             msgpack_pack_str_body(&tmp_pck,
@@ -971,25 +962,36 @@ static int cb_aws_filter(const void *data, size_t bytes,
             msgpack_pack_str(&tmp_pck, ctx->account_id_len);
             msgpack_pack_str_body(&tmp_pck,
                                   ctx->account_id, ctx->account_id_len);
-        }
+            
+            if (ctx->instance_id != NULL && strncmp(ctx->entity_type , FLB_FILTER_ENTITY_TYPE_SERVICE, FLB_FILTER_ENTITY_TYPE_SERVICE_LEN) == 0) {
+                // Pack instance ID with entity prefix for further processing
+                msgpack_pack_str(&tmp_pck, FLB_FILTER_AWS_ENTITY_INSTANCE_ID_KEY_LEN);
+                msgpack_pack_str_body(&tmp_pck,
+                                    FLB_FILTER_AWS_ENTITY_INSTANCE_ID_KEY,
+                                    FLB_FILTER_AWS_ENTITY_INSTANCE_ID_KEY_LEN);
+                msgpack_pack_str(&tmp_pck, ctx->instance_id_len);
+                msgpack_pack_str_body(&tmp_pck,
+                                    ctx->instance_id, ctx->instance_id_len);
+            }
 
-        if (ctx->enable_entity && ctx->cluster != NULL && ctx->platform != NULL && strncmp(ctx->entity_type , FLB_FILTER_ENTITY_TYPE_RESOURCE, FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN) == 0 ) {
-            // Pack cluster name with entity prefix for further processing
-            msgpack_pack_str(&tmp_pck, FLB_FILTER_AWS_ENTITY_CLUSTER_KEY_LEN);
-            msgpack_pack_str_body(&tmp_pck,
-                                  FLB_FILTER_AWS_ENTITY_CLUSTER_KEY,
-                                  FLB_FILTER_AWS_ENTITY_CLUSTER_KEY_LEN);
-            msgpack_pack_str(&tmp_pck, ctx->cluster_len);
-            msgpack_pack_str_body(&tmp_pck,
-                                  ctx->cluster, ctx->cluster_len);
-           // Pack platform with entity prefix for further processing
-            msgpack_pack_str(&tmp_pck, FLB_FILTER_AWS_ENTITY_PLATFORM_KEY_LEN);
-            msgpack_pack_str_body(&tmp_pck,
-                                  FLB_FILTER_AWS_ENTITY_PLATFORM_KEY,
-                                  FLB_FILTER_AWS_ENTITY_PLATFORM_KEY_LEN);
-            msgpack_pack_str(&tmp_pck, ctx->platform_len);
-            msgpack_pack_str_body(&tmp_pck,
-                                  ctx->platform, ctx->platform_len);
+            if (ctx->cluster != NULL && ctx->platform != NULL && strncmp(ctx->entity_type , FLB_FILTER_ENTITY_TYPE_RESOURCE, FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN) == 0 ) {
+                // Pack cluster name with entity prefix for further processing
+                msgpack_pack_str(&tmp_pck, FLB_FILTER_AWS_ENTITY_CLUSTER_KEY_LEN);
+                msgpack_pack_str_body(&tmp_pck,
+                                    FLB_FILTER_AWS_ENTITY_CLUSTER_KEY,
+                                    FLB_FILTER_AWS_ENTITY_CLUSTER_KEY_LEN);
+                msgpack_pack_str(&tmp_pck, ctx->cluster_len);
+                msgpack_pack_str_body(&tmp_pck,
+                                    ctx->cluster, ctx->cluster_len);
+                // Pack platform with entity prefix for further processing
+                msgpack_pack_str(&tmp_pck, FLB_FILTER_AWS_ENTITY_PLATFORM_KEY_LEN);
+                msgpack_pack_str_body(&tmp_pck,
+                                    FLB_FILTER_AWS_ENTITY_PLATFORM_KEY,
+                                    FLB_FILTER_AWS_ENTITY_PLATFORM_KEY_LEN);
+                msgpack_pack_str(&tmp_pck, ctx->platform_len);
+                msgpack_pack_str_body(&tmp_pck,
+                                    ctx->platform, ctx->platform_len);
+            }
         }
 
     }
