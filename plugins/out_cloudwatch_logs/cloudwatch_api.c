@@ -244,12 +244,12 @@ static int entity_add_resource_key_attributes(struct flb_cloudwatch *ctx, struct
                       "\"keyAttributes\":{",0)) {
         goto error;
     }
-    if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
-                        "\"Type\":\"Resource\"",0)) {
-        goto error;
-    }
     if(stream->entity->key_attributes->platform != NULL && strlen(stream->entity->key_attributes->platform) != 0) {
         if (strncmp(stream->entity->key_attributes->platform, EKS_PLATFORM, 3) == 0) {
+            if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
+                        "\"Type\":\"AWS::Resource\"",0)) {
+                goto error;
+            }
             if (!snprintf(ts,KEY_ATTRIBUTES_MAX_LEN, ",%s%s%s","\"ResourceType\":\"","AWS::EKS::Cluster","\"")) {
                 goto error;
             }
@@ -257,6 +257,10 @@ static int entity_add_resource_key_attributes(struct flb_cloudwatch *ctx, struct
                 goto error;
             }
         } else if (strncmp(stream->entity->key_attributes->platform, NATIVE_KUBERNETES_PLATFORM, 3) == 0) {
+            if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
+                        "\"Type\":\"Resource\"",0)) {
+                goto error;
+            }
             if (!snprintf(ts,KEY_ATTRIBUTES_MAX_LEN, ",%s%s%s","\"ResourceType\":\"","K8s::Cluster","\"")) {
                 goto error;
             }

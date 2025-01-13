@@ -405,7 +405,7 @@ static void get_cluster_from_environment(struct flb_filter_aws *ctx)
     if(ctx->cluster == NULL) {
         char* cluster_name = getenv("CLUSTER_NAME");
         if(cluster_name) {
-            ctx->cluster = strdup(cluster_name);
+            ctx->cluster = flb_strdup(cluster_name);
             ctx->cluster_len = strlen(cluster_name);
             ctx->new_keys++;
         } else {
@@ -469,7 +469,7 @@ static int get_http_auth_header(struct flb_filter_aws *ctx)
     if (ret == -1) {
         flb_plg_warn(ctx->ins, "cannot open %s", FLB_KUBE_TOKEN);
     }
-    flb_plg_info(ctx->ins, " token updated");
+    flb_plg_info(ctx->ins, " token updated", FLB_KUBE_TOKEN);
     ctx->kube_token_create = time(NULL);
 
     /* Token */
@@ -527,7 +527,7 @@ static int refresh_token_if_needed(struct flb_filter_aws *ctx)
 }
 
 /* Gather metadata from HTTP Request,
- * this could send out HTTP Request either to KUBE Server API or Kubelet
+ * this could send out HTTP Request to KUBE Server API
  */
 static int get_meta_info_from_request(struct flb_filter_aws *ctx,
                                       struct flb_upstream *upstream,
@@ -624,7 +624,7 @@ static int get_api_server_configmap(struct flb_filter_aws *ctx,
         }
         flb_plg_debug(ctx->ins,
                       "Send out request to API Server for configmap information in aws plugin");
-        packed = get_meta_info_from_request(ctx,ctx->kubernetes_upstream, namespace,FLB_KUBE_CONFIGMAP, configmap,
+        packed = get_meta_info_from_request(ctx, ctx->kubernetes_upstream, namespace, FLB_KUBE_CONFIGMAP, configmap,
                                     &buf, &size, &root_type, uri);
     }
 
@@ -655,6 +655,9 @@ static void get_platform(struct flb_filter_aws *ctx)
         ctx->platform_len = strlen(ctx->platform);
         ctx->new_keys++;
         flb_plg_debug(ctx->ins, "Platform type is %s.", ctx->platform);
+        if(config_buf) {
+            flb_free(config_buf);
+        }
     }
 }
 
