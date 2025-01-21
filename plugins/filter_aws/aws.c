@@ -759,7 +759,6 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
     }
 
     if (ctx->enable_entity) {
-      if (strncmp(ctx->entity_type , FLB_FILTER_ENTITY_TYPE_SERVICE, FLB_FILTER_ENTITY_TYPE_SERVICE_LEN) == 0) {
         if (!ctx->account_id) {
             ret = get_metadata_by_key(ctx, FLB_FILTER_AWS_IMDS_ACCOUNT_ID_PATH,
                                   &ctx->account_id, &ctx->account_id_len,
@@ -771,7 +770,7 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
         } else {
             ctx->new_keys++;
         }
-
+      if (strncmp(ctx->entity_type , FLB_FILTER_ENTITY_TYPE_SERVICE, FLB_FILTER_ENTITY_TYPE_SERVICE_LEN) == 0) {
         if (!ctx->instance_id) {
             ret = get_metadata(ctx, FLB_FILTER_AWS_IMDS_INSTANCE_ID_PATH,
                    &ctx->instance_id, &ctx->instance_id_len);
