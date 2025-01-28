@@ -1186,6 +1186,13 @@ static struct flb_config_map config_map[] = {
      0, FLB_TRUE, offsetof(struct flb_filter_aws, tls_ca_path),
      "Kubernetes TLS ca path"
     },
+
+    {
+    FLB_CONFIG_MAP_STR, "set_platform", NULL,
+    0, FLB_TRUE, offsetof(struct flb_filter_aws, set_platform),
+    "Set the platform that kubernetes is in. Possible values are k8s and eks"
+        "This should only be used for testing purpose"
+    },
     {0}
 };
 

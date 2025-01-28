@@ -167,6 +167,13 @@ struct flb_filter_aws {
     int platform_len;
 
     /*
+     * This value is used for holding the platform config
+     * value. Platform will be overriden with this variable
+     * if it's set
+     */
+    char *set_platform;
+
+    /*
      * This connection is used for calling Kubernetes configmaps
      * endpoint so pod association can determine the environment.
      * Example: EKS or Native Kubernetes.
