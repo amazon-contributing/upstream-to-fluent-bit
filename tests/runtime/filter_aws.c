@@ -220,8 +220,7 @@ static void aws_test(const char *target, const char *suffix, int nExpected, ...)
         in_ffd = flb_input(ctx.flb, "tail", NULL);
         TEST_CHECK_(in_ffd >= 0, "initialising input");
         ret = flb_input_set(ctx.flb, in_ffd,
-                            "Tag", "kube.<namespace>.<pod>.<container>",
-                            "Tag_Regex", "^" DPATH "/log/(?:[^/]+/)?(?<namespace>.+)_(?<pod>.+)_(?<container>.+)\\.log$",
+                            "Tag", "host.dmesg",
                             "Path", path,
                             "Parser", "docker",
                             "Docker_Mode", "On",
@@ -234,7 +233,7 @@ static void aws_test(const char *target, const char *suffix, int nExpected, ...)
     //change this
     ret = flb_filter_set(ctx.flb, filter_ffd,
                         "imds_version", "v2",
-                        "Match", "kube.*",
+                        "Match", "host.*",
                          NULL);
     TEST_CHECK_(ret == 0, "setting filter options");
 
@@ -259,12 +258,13 @@ static void aws_test(const char *target, const char *suffix, int nExpected, ...)
     out_ffd = flb_output(ctx.flb, "lib", (void *) &cb_data);
     TEST_CHECK_(out_ffd >= 0, "initialising output");
     flb_output_set(ctx.flb, out_ffd,
-                   "Match", "kube.*",
+                   "Match", "host.*",
                    "format", "json",
                    NULL);
     TEST_CHECK_(ret == 0, "setting output options");
 
     clear_file(path);
+
     //Testing the default values setup
     struct mk_list *head;
     struct flb_filter_instance *f_ins;
@@ -306,13 +306,13 @@ exit:
 
 static void flb_test_aws_success()
 {
-    aws_test("options_use-kubelet-disabled-replicaset_fluent-bit", NULL, 1, \
+    aws_test("options_default", NULL, 1, \
                 NULL);
 }
 
 static void flb_test_aws_entity()
 {
-    aws_test("options_use-kubelet-disabled-replicaset_fluent-bit", NULL, 1, \
+    aws_test("options_resource_entity", NULL, 1, \
                 "entity_type", "resource", \
                 "enable_entity", "On", \
                 "set_platform", "eks", \
