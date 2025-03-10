@@ -854,7 +854,6 @@ retry:
     }
 
     flb_plg_debug(ctx->ins, "cloudwatch:PutLogEvents: events=%d, payload=%d bytes", i, offset);
-    flb_plg_info(ctx->ins, "Sending payload=%s", buf->out_buf);
     ret = put_log_events(ctx, buf, buf->current_stream, (size_t) offset);
     if (ret < 0) {
         flb_plg_error(ctx->ins, "Failed to send log events");
