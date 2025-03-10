@@ -286,7 +286,7 @@ static int entity_add_resource_key_attributes(struct flb_cloudwatch *ctx, struct
         }
     }
     if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
-              "}", 1)) {
+              "},", 2)) {
         goto error;
     }
     return 0;
@@ -391,6 +391,29 @@ error:
     return -1;
 }
 
+static int entity_add_resource_attributes(struct flb_cloudwatch *ctx, struct cw_flush *buf, struct log_stream *stream,int *offset) {
+    char ts[ATTRIBUTES_MAX_LEN];
+    if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
+                      "\"attributes\":{",
+                      0)) {
+        goto error;
+    }
+    if(stream->entity->attributes->instance_id != NULL && strlen(stream->entity->attributes->instance_id) != 0) {
+        if (!snprintf(ts,ATTRIBUTES_MAX_LEN, "%s%s%s","\"EC2.InstanceId\":\"",buf->current_stream->entity->attributes->instance_id,"\"")) {
+            goto error;
+        }
+        if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
+            goto error;
+        }
+    }
+    if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
+        "}", 1)) {
+        goto error;
+    }
+    return 0;
+error:
+    return -1;
+}
 /*
  * Writes the "header" for a put log events payload
  */
@@ -425,41 +448,50 @@ static int init_put_payload(struct flb_cloudwatch *ctx, struct cw_flush *buf,
     // If we are missing the service name, the entity will get rejected by the frontend anyway
     // so do not emit entity unless service name is filled. If we are missing account ID
     // it is considered not having sufficient information for entity therefore we should drop the entity.
-    if(ctx->add_entity && stream->entity != NULL && stream->entity->key_attributes != NULL && strncmp(ctx->entity_type, FLB_FILTER_ENTITY_TYPE_RESOURCE, FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN) == 0 && stream->entity->key_attributes->platform != NULL && stream->entity->key_attributes->cluster_name != NULL && stream->entity->key_attributes->account_id != NULL) {
-        if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
-                        "\"entity\":{", 10)) {
-                goto error;
-        }
-        ret = entity_add_resource_key_attributes(ctx,buf,stream,offset);
-        if (ret < 0) {
-            flb_plg_error(ctx->ins, "Failed to initialize Resource Entity KeyAttributes");
-            goto error;
-        }
-        if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
-                        "},", 2)) {
-            goto error;
-        }
-    }
-    else if (ctx->add_entity && stream->entity != NULL && stream->entity->key_attributes != NULL && stream->entity->key_attributes->name != NULL && stream->entity->key_attributes->account_id != NULL) {
-        if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
-                        "\"entity\":{", 10)) {
-                goto error;
-        }
-        ret = entity_add_key_attributes(ctx,buf,stream,offset);
-        if (ret < 0) {
-            flb_plg_error(ctx->ins, "Failed to initialize Entity KeyAttributes");
-            goto error;
-        }
-        if(stream->entity->attributes != NULL) {
-            ret = entity_add_attributes(ctx,buf,stream,offset);
+    if(ctx->add_entity && stream->entity != NULL && stream->entity->key_attributes != NULL && stream->entity->key_attributes->account_id != NULL) {
+        if(strncmp(ctx->entity_type, FLB_FILTER_ENTITY_TYPE_RESOURCE, FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN) == 0 && stream->entity->key_attributes->platform != NULL && stream->entity->key_attributes->cluster_name != NULL) {
+            if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
+                            "\"entity\":{", 10)) {
+                    goto error;
+            }
+            ret = entity_add_resource_key_attributes(ctx,buf,stream,offset);
             if (ret < 0) {
-                flb_plg_error(ctx->ins, "Failed to initialize Entity Attributes");
+                flb_plg_error(ctx->ins, "Failed to initialize Resource Entity KeyAttributes");
+                goto error;
+            }
+            if(stream->entity->attributes != NULL) {
+                ret = entity_add_resource_attributes(ctx,buf,stream,offset);
+                if (ret < 0) {
+                    flb_plg_error(ctx->ins, "Failed to initialize Resource Entity Attributes");
+                    goto error;
+                }
+            }
+            if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
+                            "},", 2)) {
                 goto error;
             }
         }
-        if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
-                        "},", 2)) {
-            goto error;
+        else if (stream->entity->key_attributes->name != NULL) {
+            if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
+                            "\"entity\":{", 10)) {
+                    goto error;
+            }
+            ret = entity_add_key_attributes(ctx,buf,stream,offset);
+            if (ret < 0) {
+                flb_plg_error(ctx->ins, "Failed to initialize Entity KeyAttributes");
+                goto error;
+            }
+            if(stream->entity->attributes != NULL) {
+                ret = entity_add_attributes(ctx,buf,stream,offset);
+                if (ret < 0) {
+                    flb_plg_error(ctx->ins, "Failed to initialize Entity Attributes");
+                    goto error;
+                }
+            }
+            if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
+                            "},", 2)) {
+                goto error;
+            }
         }
     }
 
@@ -822,6 +854,7 @@ retry:
     }
 
     flb_plg_debug(ctx->ins, "cloudwatch:PutLogEvents: events=%d, payload=%d bytes", i, offset);
+    flb_plg_info(ctx->ins, "Sending payload=%s", buf->out_buf);
     ret = put_log_events(ctx, buf, buf->current_stream, (size_t) offset);
     if (ret < 0) {
         flb_plg_error(ctx->ins, "Failed to send log events");
@@ -1235,13 +1268,12 @@ void update_or_create_entity(struct flb_cloudwatch *ctx, struct log_stream *stre
             }
             memset(stream->entity->key_attributes, 0, sizeof(entity_key_attributes));
 
-            if (strncmp(ctx->entity_type , FLB_FILTER_ENTITY_TYPE_SERVICE, FLB_FILTER_ENTITY_TYPE_SERVICE_LEN) == 0) {
-                stream->entity->attributes = flb_malloc(sizeof(entity_attributes));
-                if (stream->entity->attributes == NULL) {
-                    return;
-                }
-                memset(stream->entity->attributes, 0, sizeof(entity_attributes));
+            stream->entity->attributes = flb_malloc(sizeof(entity_attributes));
+            if (stream->entity->attributes == NULL) {
+                return;
             }
+            memset(stream->entity->attributes, 0, sizeof(entity_attributes));
+
             stream->entity->filter_count = 0;
             stream->entity->root_filter_count = 0;
             stream->entity->service_name_found = 0;

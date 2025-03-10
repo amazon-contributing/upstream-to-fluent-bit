@@ -770,7 +770,6 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
         } else {
             ctx->new_keys++;
         }
-      if (strncmp(ctx->entity_type , FLB_FILTER_ENTITY_TYPE_SERVICE, FLB_FILTER_ENTITY_TYPE_SERVICE_LEN) == 0) {
         if (!ctx->instance_id) {
             ret = get_metadata(ctx, FLB_FILTER_AWS_IMDS_INSTANCE_ID_PATH,
                    &ctx->instance_id, &ctx->instance_id_len);
@@ -782,13 +781,12 @@ static int get_ec2_metadata(struct flb_filter_aws *ctx)
         } else {
             ctx->new_keys++;
         }
-      }
-      ctx->cluster = NULL;
-      ctx->platform = NULL;
-      if (strncmp(ctx->entity_type , FLB_FILTER_ENTITY_TYPE_RESOURCE, FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN) == 0) {
-        get_cluster_from_environment(ctx);
-        get_platform(ctx);
-      }
+        ctx->cluster = NULL;
+        ctx->platform = NULL;
+        if (strncmp(ctx->entity_type , FLB_FILTER_ENTITY_TYPE_RESOURCE, FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN) == 0) {
+            get_cluster_from_environment(ctx);
+            get_platform(ctx);
+        }
     }
 
     ctx->metadata_retrieved = FLB_TRUE;
@@ -962,7 +960,7 @@ static int cb_aws_filter(const void *data, size_t bytes,
             msgpack_pack_str_body(&tmp_pck,
                                   ctx->account_id, ctx->account_id_len);
             
-            if (ctx->instance_id != NULL && strncmp(ctx->entity_type , FLB_FILTER_ENTITY_TYPE_SERVICE, FLB_FILTER_ENTITY_TYPE_SERVICE_LEN) == 0) {
+            if (ctx->instance_id != NULL) {
                 // Pack instance ID with entity prefix for further processing
                 msgpack_pack_str(&tmp_pck, FLB_FILTER_AWS_ENTITY_INSTANCE_ID_KEY_LEN);
                 msgpack_pack_str_body(&tmp_pck,
