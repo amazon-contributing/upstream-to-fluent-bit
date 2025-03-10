@@ -471,7 +471,7 @@ static int init_put_payload(struct flb_cloudwatch *ctx, struct cw_flush *buf,
                 goto error;
             }
         }
-        else if (stream->entity->key_attributes->name != NULL) {
+        else if (strncmp(ctx->entity_type, FLB_FILTER_ENTITY_TYPE_SERVICE, FLB_FILTER_ENTITY_TYPE_SERVICE_LEN) == 0 && stream->entity->key_attributes->name != NULL) {
             if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
                             "\"entity\":{", 10)) {
                     goto error;
