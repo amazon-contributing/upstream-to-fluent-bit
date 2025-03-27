@@ -67,6 +67,40 @@
 #define FLB_FILTER_AWS_ENTITY_ACCOUNT_ID_KEY_LEN          21
 #define FLB_FILTER_AWS_HOSTNAME_KEY                       "hostname"
 #define FLB_FILTER_AWS_HOSTNAME_KEY_LEN                   8
+#define FLB_FILTER_AWS_ENTITY_PLATFORM_KEY                "aws_entity_platform"
+#define FLB_FILTER_AWS_ENTITY_PLATFORM_KEY_LEN            19
+#define FLB_FILTER_AWS_ENTITY_CLUSTER_KEY                 "aws_entity_cluster"
+#define FLB_FILTER_AWS_ENTITY_CLUSTER_KEY_LEN             18
+
+/*
+ * Possible entity type values for aws plugin
+ */
+#define FLB_FILTER_ENTITY_TYPE_RESOURCE                   "resource"
+#define FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN               8
+#define FLB_FILTER_ENTITY_TYPE_SERVICE                    "service"
+#define FLB_FILTER_ENTITY_TYPE_SERVICE_LEN                7
+/*
+ * Possible cluster platform values for aws plugin
+ */
+#define NATIVE_KUBERNETES_PLATFORM "k8s"
+#define EKS_PLATFORM "eks"
+
+/*
+ * Configmap used for verifying whether if FluentBit is
+ * on EKS or native Kubernetes
+ */
+#define KUBE_SYSTEM_NAMESPACE "kube-system"
+#define AWS_AUTH_CONFIG_MAP "aws-auth"
+
+/* Kubernetes API server info */
+#define FLB_API_HOST  "kubernetes.default.svc"
+#define FLB_API_PORT  443
+#define FLB_API_TLS   FLB_TRUE
+
+#define FLB_KUBE_TOKEN "/var/run/secrets/kubernetes.io/serviceaccount/token"
+#define FLB_KUBE_CA "/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"
+#define FLB_KUBE_CONFIGMAP "configmap"
+#define FLB_KUBE_API_CONFIGMAP_FMT "/api/v1/namespaces/%s/configmaps/%s"
 
 struct flb_filter_aws {
     /* upstream connection to ec2 IMDS */
@@ -121,6 +155,24 @@ struct flb_filter_aws {
     */
     int enable_entity;
 
+    /*
+    * Defines the type of entity.
+    * Possible values resource or service
+    */
+    flb_sds_t entity_type;
+
+    char *cluster;
+    int cluster_len;
+    char *platform;
+    int platform_len;
+
+    /*
+     * This connection is used for calling Kubernetes configmaps
+     * endpoint so pod association can determine the environment.
+     * Example: EKS or Native Kubernetes.
+     */
+    struct flb_upstream *kubernetes_upstream;
+
     /* number of new keys added by this plugin */
     int new_keys;
 
@@ -131,6 +183,32 @@ struct flb_filter_aws {
 
     /* Filter plugin instance reference */
     struct flb_filter_instance *ins;
+
+    /* HTTP Client Setup */
+    size_t buffer_size;
+
+    /* Pre-formatted HTTP Authorization header value */
+    char *auth;
+    size_t auth_len;
+
+    /* Command to get Kubernetes Authorization Token */
+    int kube_token_create;
+    int kube_token_ttl;
+
+    /* Kubernetes Token from FLB_KUBE_TOKEN file */
+    char *token;
+    size_t token_len;
+
+    struct flb_tls *tls;
+
+    /* TLS CA certificate file */
+    char *tls_ca_path;
+    char *tls_ca_file;
+    int tls_debug;
+    int tls_verify;
+    /* TLS virtual host (optional), set by configmap */
+    flb_sds_t tls_vhost;
+
 };
 
 #endif

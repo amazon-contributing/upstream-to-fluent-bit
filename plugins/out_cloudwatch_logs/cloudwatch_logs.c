@@ -516,6 +516,8 @@ void entity_destroy(entity *entity) {
         flb_free(entity->key_attributes->name);
         flb_free(entity->key_attributes->type);
         flb_free(entity->key_attributes->account_id);
+        flb_free(entity->key_attributes->platform);
+        flb_free(entity->key_attributes->cluster_name);
         flb_free(entity->key_attributes);
     }
     flb_free(entity);
@@ -675,6 +677,12 @@ static struct flb_config_map config_map[] = {
     0, FLB_TRUE, offsetof(struct flb_cloudwatch, add_entity),
     "add entity to PutLogEvent calls"
    },
+
+   {
+     FLB_CONFIG_MAP_STR, "entity_type", "service",
+     0, FLB_TRUE, offsetof(struct flb_cloudwatch, entity_type),
+     "store the entity type. Possible values resource or service"
+    },
 
     /* EOF */
     {0}

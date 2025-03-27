@@ -49,6 +49,8 @@ typedef struct entity_key_attributes {
     char *name;
     char *environment;
     char *account_id;
+    char *cluster_name;
+    char *platform;
 }entity_key_attributes;
 
 /* Attributes used for CloudWatch Entity object
@@ -194,6 +196,7 @@ struct flb_cloudwatch {
     int kubernete_metadata_enabled;
 
     int add_entity;
+    char *entity_type;
 };
 
 void flb_cloudwatch_ctx_destroy(struct flb_cloudwatch *ctx);

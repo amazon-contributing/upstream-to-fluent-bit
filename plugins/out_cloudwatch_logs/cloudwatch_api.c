@@ -238,6 +238,62 @@ error:
     return -1;
 }
 
+static int entity_add_resource_key_attributes(struct flb_cloudwatch *ctx, struct cw_flush *buf, struct log_stream *stream, int *offset) {
+    char ts[KEY_ATTRIBUTES_MAX_LEN];
+    if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
+                      "\"keyAttributes\":{",0)) {
+        goto error;
+    }
+    if(stream->entity->key_attributes->platform != NULL && strlen(stream->entity->key_attributes->platform) != 0) {
+        if (strncmp(stream->entity->key_attributes->platform, EKS_PLATFORM, 3) == 0) {
+            if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
+                        "\"Type\":\"AWS::Resource\"",0)) {
+                goto error;
+            }
+            if (!snprintf(ts,KEY_ATTRIBUTES_MAX_LEN, ",%s%s%s","\"ResourceType\":\"","AWS::EKS::Cluster","\"")) {
+                goto error;
+            }
+            if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
+                goto error;
+            }
+        } else if (strncmp(stream->entity->key_attributes->platform, NATIVE_KUBERNETES_PLATFORM, 3) == 0) {
+            if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
+                        "\"Type\":\"Resource\"",0)) {
+                goto error;
+            }
+            if (!snprintf(ts,KEY_ATTRIBUTES_MAX_LEN, ",%s%s%s","\"ResourceType\":\"","K8s::Cluster","\"")) {
+                goto error;
+            }
+            if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
+                goto error;
+            }
+        }   
+    }
+    if(stream->entity->key_attributes->cluster_name != NULL && strlen(stream->entity->key_attributes->cluster_name) != 0) {
+        if (!snprintf(ts,KEY_ATTRIBUTES_MAX_LEN, ",%s%s%s","\"Identifier\":\"",stream->entity->key_attributes->cluster_name,"\"")) {
+            goto error;
+        }
+        if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
+            goto error;
+        }
+    }
+    if(stream->entity->key_attributes->account_id != NULL && strlen(stream->entity->key_attributes->account_id) != 0) {
+        if (!snprintf(ts,KEY_ATTRIBUTES_MAX_LEN, ",%s%s%s","\"AwsAccountId\":\"",stream->entity->key_attributes->account_id,"\"")) {
+            goto error;
+        }
+        if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
+            goto error;
+        }
+    }
+    if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
+              "},", 2)) {
+        goto error;
+    }
+    return 0;
+error:
+    return -1;
+}
+
 static int entity_add_attributes(struct flb_cloudwatch *ctx, struct cw_flush *buf, struct log_stream *stream,int *offset) {
     char ts[ATTRIBUTES_MAX_LEN];
     if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
@@ -335,6 +391,29 @@ error:
     return -1;
 }
 
+static int entity_add_resource_attributes(struct flb_cloudwatch *ctx, struct cw_flush *buf, struct log_stream *stream,int *offset) {
+    char ts[ATTRIBUTES_MAX_LEN];
+    if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
+                      "\"attributes\":{",
+                      0)) {
+        goto error;
+    }
+    if(stream->entity->attributes->instance_id != NULL && strlen(stream->entity->attributes->instance_id) != 0) {
+        if (!snprintf(ts,ATTRIBUTES_MAX_LEN, "%s%s%s","\"EC2.InstanceId\":\"",buf->current_stream->entity->attributes->instance_id,"\"")) {
+            goto error;
+        }
+        if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,ts,0)) {
+            goto error;
+        }
+    }
+    if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
+        "}", 1)) {
+        goto error;
+    }
+    return 0;
+error:
+    return -1;
+}
 /*
  * Writes the "header" for a put log events payload
  */
@@ -369,31 +448,51 @@ static int init_put_payload(struct flb_cloudwatch *ctx, struct cw_flush *buf,
     // If we are missing the service name, the entity will get rejected by the frontend anyway
     // so do not emit entity unless service name is filled. If we are missing account ID
     // it is considered not having sufficient information for entity therefore we should drop the entity.
-    if(ctx->add_entity && stream->entity != NULL && stream->entity->key_attributes != NULL && stream->entity->key_attributes->name != NULL && stream->entity->key_attributes->account_id != NULL) {
-        if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
-                      "\"entity\":{", 10)) {
-            goto error;
+    if(ctx->add_entity && stream->entity != NULL && stream->entity->key_attributes != NULL && stream->entity->key_attributes->account_id != NULL) {
+        if(strncmp(ctx->entity_type, FLB_FILTER_ENTITY_TYPE_RESOURCE, FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN) == 0 && stream->entity->key_attributes->platform != NULL && stream->entity->key_attributes->cluster_name != NULL) {
+            if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
+                            "\"entity\":{", 10)) {
+                    goto error;
+            }
+            ret = entity_add_resource_key_attributes(ctx,buf,stream,offset);
+            if (ret < 0) {
+                flb_plg_error(ctx->ins, "Failed to initialize Resource Entity KeyAttributes");
+                goto error;
+            }
+            if(stream->entity->attributes != NULL) {
+                ret = entity_add_resource_attributes(ctx,buf,stream,offset);
+                if (ret < 0) {
+                    flb_plg_error(ctx->ins, "Failed to initialize Resource Entity Attributes");
+                    goto error;
+                }
+            }
+            if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
+                            "},", 2)) {
+                goto error;
+            }
         }
-
-        if(stream->entity->key_attributes != NULL) {
+        else if (strncmp(ctx->entity_type, FLB_FILTER_ENTITY_TYPE_SERVICE, FLB_FILTER_ENTITY_TYPE_SERVICE_LEN) == 0 && stream->entity->key_attributes->name != NULL) {
+            if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
+                            "\"entity\":{", 10)) {
+                    goto error;
+            }
             ret = entity_add_key_attributes(ctx,buf,stream,offset);
             if (ret < 0) {
                 flb_plg_error(ctx->ins, "Failed to initialize Entity KeyAttributes");
                 goto error;
             }
-        }
-        if(stream->entity->attributes != NULL) {
-            ret = entity_add_attributes(ctx,buf,stream,offset);
-            if (ret < 0) {
-                flb_plg_error(ctx->ins, "Failed to initialize Entity Attributes");
+            if(stream->entity->attributes != NULL) {
+                ret = entity_add_attributes(ctx,buf,stream,offset);
+                if (ret < 0) {
+                    flb_plg_error(ctx->ins, "Failed to initialize Entity Attributes");
+                    goto error;
+                }
+            }
+            if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
+                            "},", 2)) {
                 goto error;
             }
         }
-        if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
-                      "},", 2)) {
-            goto error;
-        }
-
     }
 
     if (!try_to_write(buf->out_buf, offset, buf->out_buf_size,
@@ -1126,13 +1225,31 @@ void parse_entity(struct flb_cloudwatch *ctx, entity *entity, msgpack_object map
             }
             entity->key_attributes->account_id = flb_strndup(val.via.str.ptr, val.via.str.size);
         }
+        if(strncmp(key.via.str.ptr, "aws_entity_platform",key.via.str.size ) == 0 ) {
+            if(entity->key_attributes->platform == NULL) {
+                entity->root_filter_count++;
+            } else {
+                flb_free(entity->key_attributes->platform);
+            }
+            entity->key_attributes->platform = flb_strndup(val.via.str.ptr, val.via.str.size);
+        }
+        if(strncmp(key.via.str.ptr, "aws_entity_cluster",key.via.str.size ) == 0 ) {
+            if(entity->key_attributes->cluster_name == NULL) {
+                entity->root_filter_count++;
+            } else {
+                flb_free(entity->key_attributes->cluster_name);
+            }
+            entity->key_attributes->cluster_name = flb_strndup(val.via.str.ptr, val.via.str.size);
+        }
     }
-    if(entity->key_attributes->name == NULL && entity->attributes->name_source == NULL &&entity->attributes->workload != NULL) {
-        entity->key_attributes->name = flb_strndup(entity->attributes->workload, strlen(entity->attributes->workload));
-        entity->attributes->name_source = flb_strndup("K8sWorkload", 11);
-    }
-    if(entity->key_attributes->environment == NULL) {
-        entity->key_attributes->environment = find_fallback_environment(ctx, entity);
+    if (strncmp(ctx->entity_type, FLB_FILTER_ENTITY_TYPE_SERVICE, FLB_FILTER_ENTITY_TYPE_SERVICE_LEN) == 0) {
+        if(entity->key_attributes->name == NULL && entity->attributes->name_source == NULL &&entity->attributes->workload != NULL) {
+            entity->key_attributes->name = flb_strndup(entity->attributes->workload, strlen(entity->attributes->workload));
+            entity->attributes->name_source = flb_strndup("K8sWorkload", 11);
+        }
+        if(entity->key_attributes->environment == NULL) {
+            entity->key_attributes->environment = find_fallback_environment(ctx, entity);
+        }
     }
 }
 
@@ -1155,6 +1272,7 @@ void update_or_create_entity(struct flb_cloudwatch *ctx, struct log_stream *stre
                 return;
             }
             memset(stream->entity->attributes, 0, sizeof(entity_attributes));
+
             stream->entity->filter_count = 0;
             stream->entity->root_filter_count = 0;
             stream->entity->service_name_found = 0;
@@ -1242,7 +1360,7 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
         map = root.via.array.ptr[1];
         map_size = map.via.map.size;
 
-        if(ctx->kubernete_metadata_enabled && ctx->add_entity) {
+        if( ctx->add_entity && ( ctx->kubernete_metadata_enabled || strncmp(ctx->entity_type, FLB_FILTER_ENTITY_TYPE_RESOURCE, FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN) == 0 )) {
             msgpack_sbuffer_init(&filtered_sbuf);
             msgpack_unpacked_init(&modified_unpacked);
         }
@@ -1251,7 +1369,7 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
             flb_plg_debug(ctx->ins, "Couldn't determine log group & stream for record with tag %s", tag);
             goto error;
         }
-        if(ctx->kubernete_metadata_enabled && ctx->add_entity) {
+        if(ctx->add_entity && ( ctx->kubernete_metadata_enabled || strncmp(ctx->entity_type, FLB_FILTER_ENTITY_TYPE_RESOURCE, FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN) == 0 )) {
             update_or_create_entity(ctx,stream,map);
             // Prepare a buffer to pack the modified map
             if(stream->entity != NULL && (stream->entity->root_filter_count > 0 || stream->entity->filter_count > 0)) {
@@ -1384,7 +1502,7 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
         if (ret == 0) {
             i++;
         }
-        if(ctx->kubernete_metadata_enabled && ctx->add_entity) {
+        if(ctx->add_entity && ( ctx->kubernete_metadata_enabled || strncmp(ctx->entity_type, FLB_FILTER_ENTITY_TYPE_RESOURCE, FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN) == 0 )) {
             msgpack_sbuffer_destroy(&filtered_sbuf);
             msgpack_unpacked_destroy(&modified_unpacked);
         }
@@ -1403,7 +1521,7 @@ int process_and_send(struct flb_cloudwatch *ctx, const char *input_plugin,
 
 error:
     msgpack_unpacked_destroy(&result);
-    if(ctx->kubernete_metadata_enabled && ctx->add_entity) {
+    if(ctx->add_entity && ( ctx->kubernete_metadata_enabled || strncmp(ctx->entity_type, FLB_FILTER_ENTITY_TYPE_RESOURCE, FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN) == 0 )) {
         msgpack_sbuffer_destroy(&filtered_sbuf);
         msgpack_unpacked_destroy(&modified_unpacked);
     }

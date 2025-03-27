@@ -48,6 +48,19 @@
 #define AWS_ENTITY_PREFIX "aws_entity"
 #define AWS_ENTITY_PREFIX_LEN 10
 
+/*
+ * Possible entity type values for aws plugin
+ */
+#define FLB_FILTER_ENTITY_TYPE_RESOURCE                   "resource"
+#define FLB_FILTER_ENTITY_TYPE_RESOURCE_LEN               8
+#define FLB_FILTER_ENTITY_TYPE_SERVICE                    "service"
+#define FLB_FILTER_ENTITY_TYPE_SERVICE_LEN                7
+/*
+ * Possible cluster platform values for aws plugin
+ */
+#define NATIVE_KUBERNETES_PLATFORM "k8s"
+#define EKS_PLATFORM "eks"
+
 #include "cloudwatch_logs.h"
 
 void cw_flush_destroy(struct cw_flush *buf);
