@@ -435,14 +435,17 @@ int flb_tls_session_create(struct flb_tls *tls,
 int flb_tls_session_destroy(struct flb_tls *tls, struct flb_upstream_conn *u_conn)
 {
     int ret;
+    void *session;
 
-    ret = tls->api->session_destroy(u_conn->tls_session);
+    /* Store session pointer and clear connection reference first */
+    session = u_conn->tls_session;
+    u_conn->tls_session = NULL;
+    u_conn->tls = NULL;
+
+    ret = tls->api->session_destroy(session);
     if (ret == -1) {
         return -1;
     }
-
-    u_conn->tls = NULL;
-    u_conn->tls_session = NULL;
 
     return 0;
 }
